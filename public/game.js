@@ -198,11 +198,21 @@ function createRoom() {
     const maxPlayersInput = document.getElementById('roomMaxPlayers');
     const maxPlayers = maxPlayersInput ? parseInt(maxPlayersInput.value, 10) : 4;
     
+    // Advanced settings
+    const waveDurationInput = document.getElementById('waveDuration');
+    const damageMultiplierInput = document.getElementById('damageMultiplier');
+    const goldMultiplierInput = document.getElementById('goldMultiplier');
+    
     ws.send(JSON.stringify({
         type: 'create_room',
         password: password,
         playerName: playerName,
-        maxPlayers: maxPlayers
+        maxPlayers: maxPlayers,
+        settings: {
+            waveDuration: waveDurationInput ? parseInt(waveDurationInput.value, 10) : 60,
+            damageMultiplier: damageMultiplierInput ? parseFloat(damageMultiplierInput.value) : 1.0,
+            goldMultiplier: goldMultiplierInput ? parseFloat(goldMultiplierInput.value) : 1.0
+        }
     }));
 }
 
@@ -351,6 +361,34 @@ function gameLoop() {
     // Render escort target if applicable
     if (gameState.w && gameState.w.encounterType === 'escort' && gameState.w.targetX) {
         ctx.save();
+        
+        // Draw animated path from mothership to jump gate
+        if (gameState.m) {
+            ctx.beginPath();
+            ctx.moveTo(gameState.m.x, gameState.m.y);
+            ctx.lineTo(gameState.w.targetX, gameState.w.targetY);
+            ctx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([15, 15]);
+            ctx.lineDashOffset = -(Date.now() / 50); // Scrolling dash effect
+            ctx.stroke();
+            
+            // Draw progress text halfway
+            const totalDist = Math.hypot(gameState.w.targetX - (GAME_WIDTH / 2), gameState.w.targetY - (GAME_HEIGHT / 2));
+            const currDist = Math.hypot(gameState.w.targetX - gameState.m.x, gameState.w.targetY - gameState.m.y);
+            const progress = Math.max(0, Math.min(1, 1 - (currDist / totalDist)));
+            
+            const midX = (gameState.m.x + gameState.w.targetX) / 2;
+            const midY = (gameState.m.y + gameState.w.targetY) / 2;
+            
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#3498db';
+            ctx.font = 'bold 14px Orbitron';
+            ctx.textAlign = 'center';
+            ctx.fillText(`JUMP DISTANCE: ${Math.floor(currDist)}m`, midX, midY - 20);
+            ctx.fillText(`[ ${Math.floor(progress * 100)}% ]`, midX, midY);
+        }
+
         ctx.translate(gameState.w.targetX, gameState.w.targetY);
         
         // Draw jump gate icon
@@ -360,15 +398,30 @@ function gameLoop() {
         ctx.arc(0, 0, 40, 0, Math.PI * 2);
         ctx.stroke();
         
-        ctx.setLineDash([5, 5]);
+        // Outer rotating ring
+        ctx.setLineDash([15, 10]);
         ctx.beginPath();
-        ctx.arc(0, 0, 50, Date.now() / 200, Date.now() / 200 + Math.PI * 2);
+        ctx.arc(0, 0, 60, Date.now() / 500, Date.now() / 500 + Math.PI * 2);
         ctx.stroke();
         
+        // Inner fast rotating ring
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 50, -(Date.now() / 200), -(Date.now() / 200) + Math.PI * 2);
+        ctx.stroke();
+        
+        // Inner portal glow
+        const glowPulse = (Math.sin(Date.now() / 300) + 1) / 2;
+        ctx.fillStyle = `rgba(52, 152, 219, ${0.1 + glowPulse * 0.2})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, 38, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.setLineDash([]);
         ctx.fillStyle = '#3498db';
         ctx.font = 'bold 14px Orbitron';
         ctx.textAlign = 'center';
-        ctx.fillText('JUMP GATE', 0, -60);
+        ctx.fillText('JUMP GATE', 0, -80);
         
         ctx.restore();
     }
@@ -1584,22 +1637,36 @@ function playSinglePlayer() {
 function setupInputHandlers() {
     // Keyboard input
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.w = true;
-        if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.a = true;
-        if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.s = true;
-        if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.d = true;
+        if (e.key === 'w' || e.key === 'W') keys.w = true;
+        if (e.key === 'a' || e.key === 'A') keys.a = true;
+        if (e.key === 's' || e.key === 'S') keys.s = true;
+        if (e.key === 'd' || e.key === 'D') keys.d = true;
+        if (e.key === 'ArrowUp') keys.ArrowUp = true;
+        if (e.key === 'ArrowDown') keys.ArrowDown = true;
+        if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
+        if (e.key === 'ArrowRight') keys.ArrowRight = true;
+        if (e.key === 'Shift') keys.shift = true;
         if (e.key === ' ') {
             keys.space = true;
+            mouseDown = true; // Space also triggers shooting
             e.preventDefault();
         }
     });
 
     document.addEventListener('keyup', (e) => {
-        if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') keys.w = false;
-        if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keys.a = false;
-        if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') keys.s = false;
-        if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keys.d = false;
-        if (e.key === ' ') keys.space = false;
+        if (e.key === 'w' || e.key === 'W') keys.w = false;
+        if (e.key === 'a' || e.key === 'A') keys.a = false;
+        if (e.key === 's' || e.key === 'S') keys.s = false;
+        if (e.key === 'd' || e.key === 'D') keys.d = false;
+        if (e.key === 'ArrowUp') keys.ArrowUp = false;
+        if (e.key === 'ArrowDown') keys.ArrowDown = false;
+        if (e.key === 'ArrowLeft') keys.ArrowLeft = false;
+        if (e.key === 'ArrowRight') keys.ArrowRight = false;
+        if (e.key === 'Shift') keys.shift = false;
+        if (e.key === ' ') {
+            keys.space = false;
+            mouseDown = false;
+        }
     });
 
     // Mouse input
