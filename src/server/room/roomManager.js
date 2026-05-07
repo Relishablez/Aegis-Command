@@ -107,6 +107,18 @@ class RoomManager {
   }
 
   removePlayerFromRoom(room, playerId) {
+    // Save historical stats before deleting
+    const player = room.players.get(playerId);
+    if (player && room.gameState) {
+      room.gameState.historicalStats[playerId] = {
+        name: player.name || 'Pilot',
+        kills: player.stats?.kills || 0,
+        damage: Math.floor(player.stats?.damageDealt || 0),
+        gold: player.gold,
+        color: player.color,
+        leftMidGame: true
+      };
+    }
     room.players.delete(playerId);
     room.lastActivity = Date.now();
     
@@ -261,6 +273,39 @@ class RoomManager {
 
   handleVoteNode(room, playerId, nodeId) {
     handleVoteNode(room, playerId, nodeId);
+  }
+
+  handleVoteEndgame(room, playerId, choice) {
+    const gs = room.gameState;
+    if (gs.currentPhase !== 'ENDGAME_VOTE') return;
+    
+    gs.endgameVotes = gs.endgameVotes || {};
+    gs.endgameVotes[playerId] = choice;
+    
+    // Broadcast vote update
+    this.broadcastToRoom(room, {
+      type: 'endgame_vote_update',
+      votes: gs.endgameVotes
+    });
+    
+    // Check if everyone voted
+    let allVoted = true;
+    room.players.forEach((p, id) => {
+      if (!gs.endgameVotes[id]) allVoted = false;
+    });
+    
+    if (allVoted) {
+      const pvpVotes = Object.values(gs.endgameVotes).filter(v => v === 'pvp').length;
+      const { startSelectedNode, gameOver } = require('../game/waveManager');
+      
+      if (pvpVotes > 0) {
+        // At least one person wants to fight!
+        startSelectedNode(room, 'pvp');
+      } else {
+        // Everyone wants to go home
+        gameOver(room, true);
+      }
+    }
   }
 
   handleRestartGame(room) {
