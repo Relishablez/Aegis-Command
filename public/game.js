@@ -2173,11 +2173,11 @@ function togglePauseMenu() {
         if (codeSpan) {
             const icon = document.getElementById('toggleRoomCodeIcon');
             const isHidden = icon && icon.classList.contains('fa-eye-slash');
-            codeSpan.textContent = `ROOM: ${isHidden ? '****' : (window.roomCode || 'SINGLE PLAYER')}`;
+            codeSpan.textContent = `ROOM: ${isHidden ? '****' : (roomCode || 'SINGLE PLAYER')}`;
         } else {
             // Fallback for older UI
             const prc = document.getElementById('pauseRoomCode');
-            if (prc) prc.textContent = window.roomCode ? `ROOM: ${window.roomCode}` : 'SINGLE PLAYER';
+            if (prc) prc.textContent = roomCode ? `ROOM: ${roomCode}` : 'SINGLE PLAYER';
         }
     } else {
         pauseMenu.classList.add('hidden');
@@ -2678,7 +2678,7 @@ function toggleRoomCodeVisibility() {
     if (icon.classList.contains('fa-eye-slash')) {
         icon.classList.remove('fa-eye-slash');
         icon.classList.add('fa-eye');
-        codeSpan.textContent = `ROOM: ${roomCode || 'Unknown'}`;
+        codeSpan.textContent = `ROOM: ${roomCode || 'SINGLE PLAYER'}`;
     } else {
         icon.classList.remove('fa-eye');
         icon.classList.add('fa-eye-slash');
