@@ -77,20 +77,20 @@ function gameTick() {
       
       const gs = room.gameState;
       if (!gs.gameOver && gs.currentPhase === 'COMBAT') {
-        // Update all game entities
-        room.players.forEach(p => updatePlayer(p, room));
-        updateMothership(room);
-        updateEnemies(room);
-        updateAsteroids(room);
-        updateProjectiles(room);
-        updateDrones(room);
-        updatePickups(room);
+        // Update all game entities safely to prevent a crash in one system from halting the entire game loop
+        try { room.players.forEach(p => updatePlayer(p, room)); } catch(e) { console.error(`[CRASH] updatePlayer: ${e.message}`, e.stack); }
+        try { updateMothership(room); } catch(e) { console.error(`[CRASH] updateMothership: ${e.message}`, e.stack); }
+        try { updateEnemies(room); } catch(e) { console.error(`[CRASH] updateEnemies: ${e.message}`, e.stack); }
+        try { updateAsteroids(room); } catch(e) { console.error(`[CRASH] updateAsteroids: ${e.message}`, e.stack); }
+        try { updateProjectiles(room); } catch(e) { console.error(`[CRASH] updateProjectiles: ${e.message}`, e.stack); }
+        try { updateDrones(room); } catch(e) { console.error(`[CRASH] updateDrones: ${e.message}`, e.stack); }
+        try { updatePickups(room); } catch(e) { console.error(`[CRASH] updatePickups: ${e.message}`, e.stack); }
         
         // Pass room with broadcastToRoom method to waveManager
-        updateWave(room);
+        try { updateWave(room); } catch(e) { console.error(`[CRASH] updateWave: ${e.message}`, e.stack); }
       } else if (gs.waitingForUpgrade || gs.currentPhase === 'NAVIGATION') {
         // Still call updateWave to handle timers and transitions
-        updateWave(room);
+        try { updateWave(room); } catch(e) { console.error(`[CRASH] updateWave (non-combat): ${e.message}`, e.stack); }
       }
       
       // Clamp mothership hull to max
