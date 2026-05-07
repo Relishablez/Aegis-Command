@@ -469,6 +469,8 @@ class RoomManager {
       // After boss and super upgrade, the wave is effectively over, proceed to navigation
       endWave(room, false);
     }
+  }
+
   handleDevAction(room, playerId, action, data) {
     const player = room.players.get(playerId);
     if (!player || !player.isDev) return;
