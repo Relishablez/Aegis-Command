@@ -407,6 +407,7 @@ function createRoom() {
     const waveDurationInput = document.getElementById('waveDuration');
     const damageMultiplierInput = document.getElementById('damageMultiplier');
     const goldMultiplierInput = document.getElementById('goldMultiplier');
+    const difficultyInput = document.getElementById('difficulty');
     
     ws.send(JSON.stringify({
         type: 'create_room',
@@ -416,7 +417,35 @@ function createRoom() {
         settings: {
             waveDuration: waveDurationInput ? parseInt(waveDurationInput.value, 10) : 60,
             damageMultiplier: damageMultiplierInput ? parseFloat(damageMultiplierInput.value) : 1.0,
-            goldMultiplier: goldMultiplierInput ? parseFloat(goldMultiplierInput.value) : 1.0
+            goldMultiplier: goldMultiplierInput ? parseFloat(goldMultiplierInput.value) : 1.0,
+            difficulty: difficultyInput ? difficultyInput.value : 'normal'
+        }
+    }));
+}
+
+function playSinglePlayer() {
+    const playerName = document.getElementById('playerName').value.trim();
+    if (!playerName) {
+        showLobbyError("You MUST enter a name to play.");
+        return;
+    }
+    
+    // Advanced settings
+    const waveDurationInput = document.getElementById('waveDuration');
+    const damageMultiplierInput = document.getElementById('damageMultiplier');
+    const goldMultiplierInput = document.getElementById('goldMultiplier');
+    const difficultyInput = document.getElementById('difficulty');
+    
+    ws.send(JSON.stringify({
+        type: 'create_room',
+        playerName: playerName,
+        password: '',
+        maxPlayers: 1, // Restrict to 1 player for single-player
+        settings: {
+            waveDuration: waveDurationInput ? parseInt(waveDurationInput.value, 10) : 60,
+            damageMultiplier: damageMultiplierInput ? parseFloat(damageMultiplierInput.value) : 1.0,
+            goldMultiplier: goldMultiplierInput ? parseFloat(goldMultiplierInput.value) : 1.0,
+            difficulty: difficultyInput ? difficultyInput.value : 'normal'
         }
     }));
 }
@@ -627,11 +656,8 @@ function gameLoop(currentTime) {
             ctx.lineDashOffset = -(Date.now() / 50); // Scrolling dash effect
             ctx.stroke();
             
-            // Draw progress text halfway
-            const totalDist = Math.hypot(renderState.w.targetX - (GAME_WIDTH / 2), renderState.w.targetY - (GAME_HEIGHT / 2));
+            // Draw distance text halfway
             const currDist = Math.hypot(renderState.w.targetX - renderState.m.x, renderState.w.targetY - renderState.m.y);
-            const progress = Math.max(0, Math.min(1, 1 - (currDist / totalDist)));
-            
             const midX = (renderState.m.x + renderState.w.targetX) / 2;
             const midY = (renderState.m.y + renderState.w.targetY) / 2;
             
@@ -640,7 +666,6 @@ function gameLoop(currentTime) {
             ctx.font = 'bold 14px Orbitron';
             ctx.textAlign = 'center';
             ctx.fillText(`JUMP DISTANCE: ${Math.floor(currDist)}m`, midX, midY - 20);
-            ctx.fillText(`[ ${Math.floor(progress * 100)}% ]`, midX, midY);
         }
 
         ctx.translate(renderState.w.targetX, renderState.w.targetY);
@@ -935,9 +960,29 @@ function drawGame(gs) {
         // Label
         ctx.fillStyle = '#f39c12';
         ctx.font = 'bold 14px Orbitron';
-        ctx.fillText('MERCHANT', 0, 60);
-        ctx.font = '10px Arial';
         ctx.fillText(merch.upgrade.name, 0, 75);
+        
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = '#e74c3c';
+        ctx.fillText(`${merch.upgrade.cost} GOLD`, 0, 90);
+        
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#bdc3c7';
+        // Simple wrap for description if too long
+        const words = merch.upgrade.desc.split(' ');
+        let line = '';
+        let y = 105;
+        for (let i = 0; i < words.length; i++) {
+            const testLine = line + words[i] + ' ';
+            if (ctx.measureText(testLine).width > 120 && i > 0) {
+                ctx.fillText(line, 0, y);
+                line = words[i] + ' ';
+                y += 12;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, 0, y);
         
         ctx.restore();
     });
@@ -1311,7 +1356,16 @@ function updateUI() {
     
     // Update Wave Progress & Team XP
     if (gameState.w) {
-        const wavePercent = (gameState.w.timer / gameState.w.duration) * 100;
+        let wavePercent = (gameState.w.timer / gameState.w.duration) * 100;
+        let progressText = '';
+        
+        if (gameState.w.encounterType === 'escort' && gameState.m && gameState.w.targetX) {
+            const startDist = Math.hypot(gameState.w.targetX - (GAME_WIDTH * 0.15), gameState.w.targetY - (GAME_HEIGHT / 2));
+            const currDist = Math.hypot(gameState.w.targetX - gameState.m.x, gameState.w.targetY - gameState.m.y);
+            wavePercent = Math.max(0, Math.min(100, (1 - (currDist / startDist)) * 100));
+            progressText = `ESCORTING... ${Math.floor(wavePercent)}%`;
+        }
+
         const waveFill = document.getElementById('waveProgress');
         if (waveFill) {
             waveFill.style.width = Math.min(100, wavePercent) + '%';
@@ -1320,7 +1374,9 @@ function updateUI() {
             const secondsLeft = Math.ceil((gameState.w.duration - gameState.w.timer) / 60);
             const waveDisplay = document.getElementById('waveDisplay');
             if (waveDisplay) {
-                if (gameState.w.encounterType === 'merchant') {
+                if (progressText) {
+                    waveDisplay.textContent = progressText;
+                } else if (gameState.w.encounterType === 'merchant') {
                     waveDisplay.textContent = `WAVE ${gameState.w.wave} (SAFE ZONE)`;
                 } else if (secondsLeft >= 0) {
                     waveDisplay.textContent = `WAVE ${gameState.w.wave} (${secondsLeft}s)`;
@@ -2202,6 +2258,23 @@ function setupInputHandlers() {
     
     canvas.addEventListener('mousedown', () => {
         mouseDown = true;
+        
+        // Merchant click check
+        if (gameState && gameState.merchants) {
+            for (let i = 0; i < gameState.merchants.length; i++) {
+                const merch = gameState.merchants[i];
+                const d = Math.hypot(mouseX - merch.x, mouseY - merch.y);
+                if (d < 50) { // Merchant hit radius
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'buy_merchant',
+                            merchantId: merch.id
+                        }));
+                    }
+                    break;
+                }
+            }
+        }
     });
     
     canvas.addEventListener('mouseup', () => {
@@ -2455,6 +2528,41 @@ function handleSuperUpgradeMenu(msg) {
     });
 }
 
+function handleEndgameVoteStart(msg) {
+    const modal = document.getElementById('endgameVoteModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    
+    document.getElementById('endgameTitle').textContent = msg.text || 'VICTORY!';
+    document.getElementById('endgameSub').textContent = msg.sub || 'Choose your final path:';
+    
+    // Bind buttons
+    document.getElementById('voteFinishBtn').onclick = () => {
+        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'finish' }));
+    };
+    document.getElementById('votePvpBtn').onclick = () => {
+        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'pvp' }));
+    };
+    
+    const endlessBtn = document.getElementById('voteEndlessBtn');
+    if (endlessBtn) {
+        endlessBtn.onclick = () => {
+            ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'endless' }));
+        };
+    }
+}
+
+function handleEndgameVoteUpdate(msg) {
+    const statsDiv = document.getElementById('endgameVoteStats');
+    if (!statsDiv) return;
+    
+    const votes = msg.votes || {};
+    const totalVotes = Object.keys(votes).length;
+    const totalPlayers = gameState.p?.length || 1;
+    
+    statsDiv.textContent = `Votes: ${totalVotes} / ${totalPlayers} pilots confirmed`;
+}
+
 // ─── Live Stats & Leaderboard ───────────────────────────────────────────────
 
 let _lbSortField = 'waves';
@@ -2547,29 +2655,50 @@ function loadLeaderboard(sortField) {
             }).join('');
         })
         .catch(() => {
-            document.getElementById('leaderboardBody').innerHTML =
-                '<tr><td colspan="7" style="text-align:center;color:#e74c3c;padding:20px;">Failed to load leaderboard.</td></tr>';
         });
 }
-function handleEndgameVoteStart(msg) {
-    const modal = document.getElementById('endgameVoteModal');
-    modal.classList.remove('hidden');
-    
-    document.getElementById('voteFinishBtn').onclick = () => {
-        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'finish' }));
-    };
-    
-    document.getElementById('votePvpBtn').onclick = () => {
-        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'pvp' }));
-    };
+
+function togglePauseMenu() {
+    const pm = document.getElementById('pauseMenu');
+    if (pm) {
+        if (pm.classList.contains('hidden')) {
+            pm.classList.remove('hidden');
+            const codeSpan = document.getElementById('pauseRoomCodeText');
+            if (codeSpan) {
+                // Determine if code is currently hidden
+                const icon = document.getElementById('toggleRoomCodeIcon');
+                const isHidden = icon && icon.classList.contains('fa-eye-slash');
+                codeSpan.textContent = `ROOM: ${isHidden ? '****' : roomCode || 'Unknown'}`;
+            }
+        } else {
+            pm.classList.add('hidden');
+        }
+    }
 }
 
-function handleEndgameVoteUpdate(msg) {
-    const stats = document.getElementById('endgameVoteStats');
-    const voteCount = Object.keys(msg.votes).length;
-    const pvpVotes = Object.values(msg.votes).filter(v => v === 'pvp').length;
-    stats.textContent = `${voteCount} players voted (${pvpVotes} for PvP)`;
+function toggleRoomCodeVisibility() {
+    const codeSpan = document.getElementById('pauseRoomCodeText');
+    const icon = document.getElementById('toggleRoomCodeIcon');
+    if (!codeSpan || !icon) return;
+    
+    if (icon.classList.contains('fa-eye-slash')) {
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+        codeSpan.textContent = `ROOM: ${roomCode || 'Unknown'}`;
+    } else {
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+        codeSpan.textContent = `ROOM: ****`;
+    }
 }
+
+// Global keydown listeners for Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        togglePauseMenu();
+    }
+});
+
 
 // Ensure gameover also hides the endgame modal
 const originalHandleGameOver = handleGameOver;
