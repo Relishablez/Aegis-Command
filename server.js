@@ -71,8 +71,8 @@ setupWebSocketHandlers(wss, roomManager);
 
 // Game loop - runs at 60 FPS for all rooms
 function gameTick() {
-  try {
-    for (const room of roomManager.rooms.values()) {
+  for (const room of roomManager.rooms.values()) {
+    try {
       if (room.players.size === 0) continue;
       
       const gs = room.gameState;
@@ -88,16 +88,18 @@ function gameTick() {
         
         // Pass room with broadcastToRoom method to waveManager
         updateWave(room);
-      } else if (gs.waitingForUpgrade) {
-        // Still call updateWave to handle upgrade timer
+      } else if (gs.waitingForUpgrade || gs.currentPhase === 'NAVIGATION') {
+        // Still call updateWave to handle timers and transitions
         updateWave(room);
       }
       
       // Clamp mothership hull to max
-      gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull);
+      if (gs.mothership) {
+        gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull);
+      }
+    } catch (err) {
+      console.error(`Error in gameTick for room ${room.code}:`, err);
     }
-  } catch (err) {
-    console.error('Error in gameTick:', err);
   }
 }
 
