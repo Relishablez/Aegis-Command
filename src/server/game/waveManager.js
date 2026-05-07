@@ -563,14 +563,16 @@ function gameOver(room, victory) {
     
     // Record to global leaderboard
     if (typeof global.addLeaderboardEntry === 'function') {
+      const isDevRun = Array.from(room.players.values()).some(p => p.isDev);
       global.addLeaderboardEntry({
-        names: playerNames.join(' & '),
+        names: (isDevRun ? '[DEV] ' : '') + playerNames.join(' & '),
         playerCount: room.players.size,
         isCoop: !room.isSinglePlayer && room.players.size > 1,
         waves: gs.wave,
         kills: totalKills,
         timeSeconds: timeElapsed,
         victory,
+        isDev: isDevRun,
         timestamp: Date.now()
       });
     }
