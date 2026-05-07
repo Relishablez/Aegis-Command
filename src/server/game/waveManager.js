@@ -10,35 +10,43 @@ function updateWave(room) {
   const gs = room.gameState;
   if (!gs || gs.gameOver || !gs.gameStarted) return;
 
-  // Handle phase-specific logic
-  if (gs.currentPhase !== 'COMBAT') {
-    if (gs.currentPhase === 'UPGRADE') {
-      gs.upgradeTimer++;
-      const timeLeft = Math.max(0, Math.ceil((UPGRADE_MAX_TIME - gs.upgradeTimer) / 30));
-      if (room.broadcastToRoom) {
-        room.broadcastToRoom({
-          type: 'upgrade_timer_update',
-          timeLeft: timeLeft
-        });
-      }      
-      // Re-sync upgrade menu every 3 seconds for players who haven't picked
-      if (gs.upgradeTimer % 180 === 0) {
-        room.players.forEach((player, playerId) => {
-          if (!player.upgradeReady && player.pendingUpgrades) {
-            player.ws.send(JSON.stringify({
-              type: 'upgrade',
-              gold: player.gold,
-              levels: gs.playerUpgrades[playerId] || {},
-              options: player.pendingUpgrades,
-              playerId: playerId,
-              pinnedId: player.pinnedUpgradeId
-            }));
-          }
-        });
-      }
+  // PROCESS TIMERS (Real-time based)
+  const now = Date.now();
+  if (!gs.lastTimerTick) gs.lastTimerTick = now;
+  const deltaSeconds = (now - gs.lastTimerTick) / 1000;
+  gs.lastTimerTick = now;
+
+  // PROCESS TIMERS
+  if (gs.currentPhase === 'COMBAT') {
+    gs.waveTimer += deltaSeconds * 60; 
+  } else if (gs.currentPhase === 'UPGRADE') {
+    gs.upgradeTimer += deltaSeconds * 60;
+    const timeLeft = Math.max(0, Math.ceil((UPGRADE_MAX_TIME - gs.upgradeTimer) / 60));
+    if (room.broadcastToRoom) {
+      room.broadcastToRoom({
+        type: 'upgrade_timer_update',
+        timeLeft: timeLeft
+      });
+    }      
+    // Re-sync upgrade menu every 3 seconds for players who haven't picked
+    if (Math.floor(gs.upgradeTimer) % 180 === 0) {
+      room.players.forEach((player, playerId) => {
+        if (!player.upgradeReady && player.pendingUpgrades) {
+          player.ws.send(JSON.stringify({
+            type: 'upgrade',
+            gold: player.gold,
+            levels: gs.playerUpgrades[playerId] || {},
+            options: player.pendingUpgrades,
+            playerId: playerId,
+            pinnedId: player.pinnedUpgradeId
+          }));
+        }
+      });
     }
-    return;
   }
+
+  // Handle phase-specific logic (exit if not in combat)
+  if (gs.currentPhase !== 'COMBAT') return;
   
   // COMBAT Phase
   
@@ -49,24 +57,33 @@ function updateWave(room) {
     return;
   }
   
-  gs.waveTimer++;
+  // Scaling Difficulty Factors
+  const difficultyMultiplier = 1 + (gs.wave - 1) * 0.15; // +15% per wave
+  const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.25;
   
   // Enemy Spawning Logic
   if (gs.encounterType !== 'salvage' && gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
     gs.spawnTimer++;
-    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.2;
-    const spawnRate = Math.max(15, (70 - gs.wave * 2) / playerFactor); // Get faster as waves progress and more players join
+    // Get faster as waves progress and more players join
+    const spawnRate = Math.max(20, (120 - gs.wave * 4) / playerFactor); 
     if (gs.spawnTimer >= spawnRate) {
       gs.spawnTimer = 0;
       const hasBoss = gs.enemies.some(e => e.isBoss);
       if (!hasBoss) {
         const { spawnEnemy } = require('./entityFactory');
-        gs.enemies.push(spawnEnemy(room));
+        const enemy = spawnEnemy(room);
+        
+        // Scale enemy stats
+        enemy.maxHull *= difficultyMultiplier;
+        enemy.hull = enemy.maxHull;
+        enemy.speed *= (1 + (gs.wave - 1) * 0.05); // Speed increases 5% per wave
+        
+        gs.enemies.push(enemy);
       }
     }
   } else if (gs.encounterType === 'salvage') {
     gs.spawnTimer++;
-    if (gs.spawnTimer >= 40) {
+    if (gs.spawnTimer >= 60) {
       gs.spawnTimer = 0;
       const { spawnPickup } = require('./entityFactory');
       const types = ['gold', 'gold', 'health', 'team_health', 'mothership_health', 'xp'];
@@ -81,11 +98,12 @@ function updateWave(room) {
   
   // Asteroid Spawning Logic
   if (gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
-    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.15;
-    const asteroidRate = Math.max(80, (400 - gs.wave * 15) / playerFactor);
+    const asteroidRate = Math.max(120, (600 - gs.wave * 30) / playerFactor);
     if (gs.waveTimer % Math.floor(asteroidRate) === 0) {
       const { spawnAsteroid } = require('./entityFactory');
-      gs.asteroids.push(spawnAsteroid(room));
+      const asteroid = spawnAsteroid(room);
+      asteroid.speed *= (1 + (gs.wave - 1) * 0.03); // Asteroids get faster too
+      gs.asteroids.push(asteroid);
     }
   }
   
@@ -98,6 +116,7 @@ function updateWave(room) {
   // Check mission completion
   if (gs.waveTimer >= gs.waveDuration) {
     if (gs.encounterType !== 'boss') {
+      const { endWave } = require('./waveManager'); // Keep waveManager require here to avoid circular dependencies
       endWave(room, false);
     }
   }
