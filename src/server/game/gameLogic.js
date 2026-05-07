@@ -464,13 +464,8 @@ function updateEnemies(room) {
     // Remove dead enemies and handle drops
     if (e.hull <= 0) {
       if (e.isBoss) {
-        const { triggerSuperUpgrade, gameOver } = require('./waveManager');
-        if (gs.wave >= 15) {
-          triggerEndgameVoting(room);
-          continue;
-        } else {
-          triggerSuperUpgrade(room);
-        }
+        const { endWave } = require('./waveManager');
+        endWave(room, false);
       }
       
       const playerScale = Math.max(1, Math.sqrt(room.players.size)); // Reduces gold per player as group size increases
