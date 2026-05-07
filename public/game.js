@@ -179,6 +179,12 @@ function handleMessage(msg) {
         case 'navigation_options':
             handleNavigationOptions(msg);
             break;
+        case 'super_upgrade_phase':
+            handleSuperUpgradePhase(msg);
+            break;
+        case 'pause_state':
+            gamePaused = msg.isPaused;
+            break;
         case 'warp_start':
             handleWarpStart(msg);
             break;
@@ -549,6 +555,15 @@ function updatePlayerList(players) {
         playerList.appendChild(li);
     });
 }
+
+window.setFpsLimit = function(fps) {
+    const val = parseInt(fps);
+    if (val >= 240) {
+        window.currentFrameMinTime = 0; // Uncapped
+    } else {
+        window.currentFrameMinTime = 1000 / val;
+    }
+};
 
 // Game loop
 function gameLoop(currentTime) {
@@ -1303,9 +1318,13 @@ function updateUI() {
             
             // Add numeric countdown if wanted
             const secondsLeft = Math.ceil((gameState.w.duration - gameState.w.timer) / 60);
-            if (secondsLeft >= 0) {
-                const waveDisplay = document.getElementById('waveDisplay');
-                if (waveDisplay) waveDisplay.textContent = `WAVE ${gameState.w.wave} (${secondsLeft}s)`;
+            const waveDisplay = document.getElementById('waveDisplay');
+            if (waveDisplay) {
+                if (gameState.w.encounterType === 'merchant') {
+                    waveDisplay.textContent = `WAVE ${gameState.w.wave} (SAFE ZONE)`;
+                } else if (secondsLeft >= 0) {
+                    waveDisplay.textContent = `WAVE ${gameState.w.wave} (${secondsLeft}s)`;
+                }
             }
         }
         
@@ -1795,6 +1814,29 @@ function handleUpgradeApplied(msg) {
     updateUpgradeReadyStatus();
 }
 
+function handleSuperUpgradePhase(msg) {
+    console.log('[UI] Showing super upgrade menu');
+    const superUpgradeMenu = document.getElementById('superUpgradeMenu');
+    if (superUpgradeMenu) {
+        superUpgradeMenu.classList.remove('hidden');
+        superUpgradeMenu.style.display = 'block';
+    }
+}
+
+function selectSuperUpgrade(upgradeId) {
+    ws.send(JSON.stringify({
+        type: 'select_super_upgrade',
+        upgradeId: upgradeId
+    }));
+    
+    // Hide menu optimistically
+    const superUpgradeMenu = document.getElementById('superUpgradeMenu');
+    if (superUpgradeMenu) {
+        superUpgradeMenu.classList.add('hidden');
+        superUpgradeMenu.style.display = 'none';
+    }
+}
+
 function handleUpgradeRerolled(msg) {
     handleUpgradeMenu(msg);
 }
@@ -2059,6 +2101,24 @@ function onGameStarted() {
     console.log("[DEBUG] Game Started, Hotkeys Active");
 }
 
+let gamePaused = false;
+function togglePauseMenu() {
+    const pauseMenu = document.getElementById('pauseMenu');
+    if (!pauseMenu) return;
+    
+    ws.send(JSON.stringify({ type: 'toggle_pause' }));
+    
+    if (pauseMenu.classList.contains('hidden')) {
+        const prc = document.getElementById('pauseRoomCode');
+        if (prc) prc.textContent = window.roomCode ? `ROOM: ${window.roomCode}` : 'SINGLE PLAYER';
+        pauseMenu.classList.remove('hidden');
+        pauseMenu.style.display = 'block';
+    } else {
+        pauseMenu.classList.add('hidden');
+        pauseMenu.style.display = 'none';
+    }
+}
+
 // Input handling
 function setupInputHandlers() {
     console.log("[DEBUG] Setting up input handlers...");
@@ -2080,6 +2140,7 @@ function setupInputHandlers() {
             e.preventDefault();
             toggleStatusPanel();
         }
+        if (e.key === 'Escape') togglePauseMenu();
         if (e.key === '`') {
             console.log(`[DEBUG] Dev Panel Hotkey Pressed: ${e.key}`);
             e.preventDefault();
