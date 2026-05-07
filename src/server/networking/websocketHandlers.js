@@ -21,6 +21,7 @@ function setupWebSocketHandlers(wss, roomManager) {
           playerId = 'player_' + Math.random().toString(36).substr(2, 9);
           if (roomManager.addPlayerToRoom(room, playerId, ws, { name: sanitizedName })) {
             currentRoom = room;
+            room.ownerId = playerId; // Set the room owner to the creator
 
             // Send room created success with player info
             ws.send(JSON.stringify({
