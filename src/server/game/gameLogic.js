@@ -88,7 +88,7 @@ function updatePlayer(p, room) {
   const effectiveFireRate = p.powerups.rapidFire > 0 ? Math.max(2, p.fireRate / 2) : p.fireRate;
   
   if (p.fireCooldown > 0) p.fireCooldown--;
-  if (p.mouseDown && p.fireCooldown <= 0) {
+  if (p.mouseDown && p.fireCooldown <= 0 && room.gameState.projectiles.length < 2000) {
     const spread = 0.15 + (p.spread || 0);
     const baseAngle = p.angle;
     const damage = (p.damage || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
@@ -311,7 +311,8 @@ function updateMothership(room) {
       m.autoCooldown--;
       if (m.autoCooldown <= 0) {
         let nearest = gs.enemies.sort((a, b) => dist(m, a) - dist(m, b))[0];
-        if (nearest && dist(m, nearest) < 500) {
+        const range = m.turretRange || 500;
+        if (nearest && dist(m, nearest) < range) {
           const a = angle(m, nearest);
           const { spawnProjectile } = require('./entityFactory');
           
@@ -433,7 +434,7 @@ function updateEnemies(room) {
       if (e.isBoss) {
         const { triggerSuperUpgrade, gameOver } = require('./waveManager');
         if (gs.wave >= 15) {
-          gameOver(room, true);
+          triggerEndgameVoting(room);
           return;
         } else {
           triggerSuperUpgrade(room);
@@ -647,26 +648,38 @@ function updateProjectiles(room) {
             owner.stats.damageDealt += damage;
           }
           
-          // AoE logic
-          if (b.aoe > 0) {
+          // Optimized Secondary Effects (AoE, Explosive, Chaining)
+          const aoeRadius = b.aoe || 0;
+          const explosiveRadius = (b.explosive > 0) ? 50 : 0;
+          const blastRadius = Math.max(aoeRadius, explosiveRadius, b.isMissile ? 120 : 0);
+          
+          if (blastRadius > 0) {
             gs.enemies.forEach(other => {
               if (other === e) return;
-              // OPTIMIZATION
-              if (Math.abs(e.x - other.x) > b.aoe + 5 || Math.abs(e.y - other.y) > b.aoe + 5) return;
+              // Fast AABB check
+              if (Math.abs(b.x - other.x) > blastRadius || Math.abs(b.y - other.y) > blastRadius) return;
               
-              if (dist(e, other) < b.aoe) {
-                other.hull -= damage * 0.5;
+              if (dist(b, other) < blastRadius) {
+                const aoeDmg = aoeRadius > 0 ? (damage * 0.5) : 0;
+                const expDmg = explosiveRadius > 0 ? (damage * b.explosive) : 0;
+                const totalExtraDmg = aoeDmg + expDmg;
+                
+                other.hull -= totalExtraDmg;
                 other.lastHitBy = b.ownerId;
-                if (owner) owner.stats.damageDealt += damage * 0.5;
+                if (owner) owner.stats.damageDealt += totalExtraDmg;
               }
             });
-            // Mark for explosion effect on client
             b.exploded = true;
           }
           
-          // Chain Lightning Logic
+          // Chain Lightning Logic (Optimized with AABB)
           if (owner && owner.chainLightning && !b.hasChained) {
-            const nextTarget = gs.enemies.find(ne => ne !== e && dist(ne, e) < 400);
+            const nextTarget = gs.enemies.find(ne => {
+              if (ne === e) return false;
+              if (Math.abs(ne.x - e.x) > 400 || Math.abs(ne.y - e.y) > 400) return false;
+              return dist(ne, e) < 400;
+            });
+            
             if (nextTarget) {
               const { spawnProjectile } = require('./entityFactory');
               const a = angle(e, nextTarget);
@@ -686,20 +699,6 @@ function updateProjectiles(room) {
             room.players.forEach(p => {
               if (p.alive) p.hull = Math.min(p.maxHull, p.hull + damage * b.healing);
             });
-          }
-          
-          // Explosive rounds
-          if (b.explosive > 0) {
-            gs.enemies.forEach(other => {
-              if (other === e) return;
-              // OPTIMIZATION
-              if (Math.abs(b.x - other.x) > 55 || Math.abs(b.y - other.y) > 55) return;
-              
-              if (dist(b, other) < 50) {
-                other.hull -= damage * b.explosive;
-              }
-            });
-            b.exploded = true;
           }
           
           if (b.pierce > 0) {
