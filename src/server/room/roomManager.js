@@ -278,13 +278,18 @@ class RoomManager {
     
     if (allVoted) {
       const pvpVotes = Object.values(gs.endgameVotes).filter(v => v === 'pvp').length;
-      const { startSelectedNode, gameOver } = require('../game/waveManager');
+      const endlessVotes = Object.values(gs.endgameVotes).filter(v => v === 'endless').length;
+      const finishVotes = Object.values(gs.endgameVotes).filter(v => v === 'finish').length;
+      const { startSelectedNode, gameOver, triggerNavigation } = require('../game/waveManager');
       
       if (pvpVotes > 0) {
         // At least one person wants to fight!
         startSelectedNode(room, 'pvp');
+      } else if (endlessVotes > 0 && endlessVotes >= finishVotes) {
+        // Continue to endless navigation
+        triggerNavigation(room);
       } else {
-        // Everyone wants to go home
+        // Finish run
         gameOver(room, true);
       }
     }
@@ -349,33 +354,36 @@ class RoomManager {
         gs.mothership.maxHull += 1500;
         gs.mothership.hull += 1500;
       }
-      if (upgrade.id === 'orbital_strike') gs.orbitalStrikeUnlocked = true;
-      if (upgrade.id === 'hyper_drives') {
-        if (!gs.hyperDriveLevel) gs.hyperDriveLevel = 0;
-        if (gs.hyperDriveLevel < 2) { // Cap at +100% (2.0 multiplier)
-          gs.hyperDriveLevel++;
-          gs.hyperDriveBoost = 1.0 + (gs.hyperDriveLevel * 0.5);
-        } else {
-          // Cap reached, refund gold + bonus
-          player.gold += 3000;
-          player.ws.send(JSON.stringify({
-            type: 'announcement',
-            text: 'SPEED CAP REACHED',
-            sub: '+3000 GOLD COMPENSATED'
-          }));
-        }
+      if (upgrade.id === 'orbital_strike') {
+        gs.orbitalStrikeUnlocked = true;
+        if (!gs.orbitalCooldownMax) gs.orbitalCooldownMax = 300;
+        gs.orbitalCooldownMax = Math.max(30, gs.orbitalCooldownMax - 30); // Reduces cooldown
       }
-      if (upgrade.id === 'homing_missiles') gs.teamHomingBoost = true;
+      if (upgrade.id === 'hyper_drives') {
+        gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.5; // Speeds up Mothership and Drones
+        player.merchantSpeed = (player.merchantSpeed || 1.0) + 1.0; // Speeds up buyer
+      }
       if (upgrade.id === 'quantum_shield') {
          gs.mothership.shieldMax = (gs.mothership.shieldMax || 0) + 1000;
          gs.mothership.shield = gs.mothership.shieldMax;
       }
       
       // Player specific
+      if (upgrade.id === 'homing_missiles') player.merchantHoming = true;
       if (upgrade.id === 'double_projectiles') player.merchantMultiShot = (player.merchantMultiShot || 1) * 2;
       if (upgrade.id === 'double_damage') player.merchantDamage = (player.merchantDamage || 1) * 2;
       if (upgrade.id === 'rate_of_fire') player.merchantFireRate = (player.merchantFireRate || 1) * 0.5;
-      if (upgrade.id === 'chain_lightning') player.chainLightning = true;
+      if (upgrade.id === 'chain_lightning') player.chainLightning = (player.chainLightning || 0) + 1;
+      if (upgrade.id === 'shrapnel_burst') player.shrapnel = (player.shrapnel || 0) + 1;
+      if (upgrade.id === 'cursed_relic') {
+        player.merchantDamage = (player.merchantDamage || 1) * 5;
+        player.merchantMultiShot = (player.merchantMultiShot || 1) + 5;
+        player.cursedDamageTaken = (player.cursedDamageTaken || 1) * 2;
+      }
+      if (upgrade.id === 'laser_weapon') {
+        player.weaponType = 'laser';
+        player.merchantLaser = (player.merchantLaser || 0) + 1;
+      }
       
       const { recalculatePlayerStats } = require('../game/upgradeSystem');
       recalculatePlayerStats(player, gs);
@@ -464,9 +472,14 @@ class RoomManager {
     });
 
     if (allSelected) {
-      const { endWave } = require('../game/waveManager');
-      // After boss and super upgrade, the wave is effectively over, proceed to navigation
-      endWave(room, false);
+      if (gs.wave >= 15) {
+        const { triggerEndgameVoting } = require('../game/waveManager');
+        triggerEndgameVoting(room);
+      } else {
+        const { endWave } = require('../game/waveManager');
+        // After boss and super upgrade, the wave is effectively over, proceed to navigation
+        endWave(room, false);
+      }
     }
   }
 
