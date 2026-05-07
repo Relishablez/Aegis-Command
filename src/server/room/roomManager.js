@@ -251,38 +251,6 @@ class RoomManager {
         pinnedId: player.pinnedUpgradeId
       }));
     }
-  }
-
-  handleEndWave(room) {
-    // Send upgrade menu to each player with their individual upgrades and options
-    room.players.forEach((player, playerId) => {
-      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
-      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
-      
-      player.ws.send(JSON.stringify({
-        type: 'upgrade',
-        gold: player.gold,
-        levels: playerUpgrades,
-        options: upgradeOptions,
-        playerId: playerId,
-        pinnedId: player.pinnedUpgradeId
-      }));
-    });
-    
-    // Broadcast timer start to all
-    if (room.broadcastToRoom) {
-      const { UPGRADE_MAX_TIME } = require('../game/waveManager');
-      room.broadcastToRoom({
-        type: 'upgrade_timer_start',
-        maxTime: UPGRADE_MAX_TIME
-      });
-    }
-  }
-
-  handleGameOver(room, victory) {
-    gameOver(room, victory);
-  }
-
   handleVoteNode(room, playerId, nodeId) {
     handleVoteNode(room, playerId, nodeId);
   }
@@ -291,11 +259,9 @@ class RoomManager {
     const gs = room.gameState;
     if (gs.currentPhase !== 'ENDGAME_VOTE') return;
     
-    gs.endgameVotes = gs.endgameVotes || {};
     gs.endgameVotes[playerId] = choice;
     
-    // Broadcast vote update
-    this.broadcastToRoom(room, {
+    room.broadcastToRoom({
       type: 'endgame_vote_update',
       votes: gs.endgameVotes
     });
@@ -322,6 +288,35 @@ class RoomManager {
 
   handleRestartGame(room) {
     restartGame(room);
+  }
+
+  handleEndWave(room) {
+    room.players.forEach((player, playerId) => {
+      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
+      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+      
+      player.ws.send(JSON.stringify({
+        type: 'upgrade',
+        gold: player.gold,
+        levels: playerUpgrades,
+        options: upgradeOptions,
+        playerId: playerId,
+        pinnedId: player.pinnedUpgradeId
+      }));
+    });
+    
+    // Broadcast timer start to all
+    if (room.broadcastToRoom) {
+      const { UPGRADE_MAX_TIME } = require('../config/constants');
+      room.broadcastToRoom({
+        type: 'upgrade_timer_start',
+        maxTime: UPGRADE_MAX_TIME
+      });
+    }
+  }
+
+  handleGameOver(room, victory) {
+    gameOver(room, victory);
   }
 
   handleBuyMerchant(room, playerId, merchantId) {
@@ -507,6 +502,15 @@ class RoomManager {
         action: action
       });
     }
+  }
+
+  broadcastToRoom(room, msg) {
+    const json = JSON.stringify(msg);
+    room.players.forEach(player => {
+      if (player.ws && player.ws.readyState === 1) { // 1 = OPEN
+        player.ws.send(json);
+      }
+    });
   }
 }
 
