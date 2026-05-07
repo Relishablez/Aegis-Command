@@ -194,6 +194,11 @@ function updatePlayer(p, room) {
         
         if (projectile.type === 'laser') {
           projectile.isLaser = true;
+          projectile.pierce = (projectile.pierce || 0) + 10;
+          projectile.range = p.laserRange || 500;
+          // Lasers are fast
+          projectile.vx *= 4;
+          projectile.vy *= 4;
         }
         
         gs.projectiles.push(projectile);
@@ -417,14 +422,16 @@ function updateEnemies(room) {
       
       // Check collision with mothership
       if (dist(e, m) < e.radius + m.radius) {
-        if (m.shield > 0) {
-          m.shield -= 10;
-          if (m.shield < 0) {
-            m.hull += m.shield;
-            m.shield = 0;
-          }
-        } else {
-          m.hull -= 10;
+        if (!m.godMode) {
+            if (m.shield > 0) {
+              m.shield -= 10;
+              if (m.shield < 0) {
+                m.hull += m.shield;
+                m.shield = 0;
+              }
+            } else {
+              m.hull -= 10;
+            }
         }
         e.hull = 0;
       }
@@ -433,6 +440,10 @@ function updateEnemies(room) {
     // Check collision with players
     room.players.forEach(p => {
       if (p.alive && dist(e, p) < e.radius + p.radius) {
+        if (p.godMode) {
+            e.hull -= 100; // Ramming damage
+            return;
+        }
         if (p.shield > 0) {
           p.shield -= 20;
           if (p.shield < 0) {
@@ -465,8 +476,8 @@ function updateEnemies(room) {
     // Remove dead enemies and handle drops
     if (e.hull <= 0) {
       if (e.isBoss) {
-        const { endWave } = require('./waveManager');
-        endWave(room, false);
+        const { triggerSuperUpgrade } = require('./waveManager');
+        triggerSuperUpgrade(room);
       }
       
       const playerScale = Math.max(1, Math.sqrt(room.players.size)); // Reduces gold per player as group size increases
@@ -533,7 +544,7 @@ function updateAsteroids(room) {
     // Check collision with mothership
     const anyPlayerAlive = Array.from(room.players.values()).some(p => p.alive);
     if (dist(a, m) < a.radius + m.radius - 10) {
-      if (anyPlayerAlive) {
+      if (anyPlayerAlive || m.godMode) {
         // Invulnerable!
         a.hull = 0; // Asteroid still breaks but MS takes no damage
       } else {
@@ -553,7 +564,7 @@ function updateAsteroids(room) {
     // Check collision with players
     room.players.forEach(p => {
       if (p.alive && dist(a, p) < a.radius + p.radius - 5) {
-        if (p.powerups.invincible > 0) return; // Invincible!
+        if (p.powerups.invincible > 0 || p.godMode) return; // Invincible!
         
         if (p.shield > 0) {
           p.shield -= 25;
@@ -632,6 +643,7 @@ function updateProjectiles(room) {
         let hit = false;
         for (const p of room.players.values()) {
           if (p.id !== b.ownerId && p.alive && dist(b, p) < p.radius + 10) {
+            if (p.godMode) continue;
             p.hull -= (b.damage || 1) * 2;
             if (p.hull <= 0) {
               p.alive = false;
