@@ -10,6 +10,7 @@ const {
 const { createGameState } = require('../game/entityFactory');
 const { applyUpgrade, generateUpgradeOptions, rerollUpgrades } = require('../game/upgradeSystem');
 const { endWave, startNextWave, gameOver, restartGame, selectNode, handleVoteNode } = require('../game/waveManager');
+const UPGRADES = require('../config/upgrades');
 
 class RoomManager {
   constructor() {
@@ -104,6 +105,7 @@ class RoomManager {
       });
       finalName = devCount === 0 ? 'DevMode' : `DevMode[${devCount}]`;
       player.isDev = true;
+      console.log(`[SERVER] DevMode detected for player: ${finalName} (ID: ${playerId})`);
     }
     player.name = finalName;
     
@@ -486,8 +488,16 @@ class RoomManager {
         break;
       case 'apply_upgrade':
         const upgradeId = data.upgradeId;
+        const upgradeDef = UPGRADES.find(u => u.id === upgradeId);
         if (!gs.playerUpgrades[playerId]) gs.playerUpgrades[playerId] = {};
         const currentLevel = gs.playerUpgrades[playerId][upgradeId] || 0;
+        
+        // Check for max level
+        if (upgradeDef && currentLevel >= upgradeDef.max) {
+          console.log(`[DEV] Upgrade ${upgradeId} already at max level (${upgradeDef.max})`);
+          return;
+        }
+        
         gs.playerUpgrades[playerId][upgradeId] = currentLevel + 1;
         recalculatePlayerStats(player, gs);
         break;
