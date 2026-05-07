@@ -1,4 +1,5 @@
 // Aegis Command - Multiplayer Client Game Logic
+console.log("[SYSTEM] game.js loaded successfully - v2");
 
 // Game Constants
 const GAME_WIDTH = 1600;
@@ -10,6 +11,7 @@ let gameState = null;
 let playerId = null;
 let roomCode = null;
 let isHost = false;
+let isDev = false;
 let compendiumData = [];
 let unlockedAchievements = JSON.parse(localStorage.getItem('aegis_achievements') || '[]');
 
@@ -62,19 +64,6 @@ function connectWebSocket() {
     ws.onopen = () => {
         console.log('Connected to server');
         
-        // Setup UI event listeners
-        document.getElementById('toggleStatusBtn')?.addEventListener('click', () => {
-            toggleStatusPanel();
-        });
-
-        // Hotkey for Status Panel
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Tab' || e.key === '`') {
-                e.preventDefault();
-                toggleStatusPanel();
-            }
-        });
-
         // Check if we should auto-join a room from URL
         const urlParams = new URLSearchParams(window.location.search);
         const autoRoomCode = urlParams.get('room');
@@ -129,7 +118,7 @@ function handleMessage(msg) {
             handlePlayerLeft(msg);
             break;
         case 'game_started':
-            handleGameStarted();
+            onGameStarted();
             break;
         case 'state':
             gameState = msg;
@@ -168,12 +157,13 @@ function handleMessage(msg) {
             handleAchievementUnlocked(msg);
             break;
         case 'compendium_data':
-            compendiumData = msg.upgrades;
+            compendiumData = msg.upgrades.sort((a, b) => a.name.localeCompare(b.name));
             renderCompendium();
             // Populate dev menu if it exists
             const devSelect = document.getElementById('devUpgradeSelect');
             if (devSelect && compendiumData) {
                 devSelect.innerHTML = compendiumData.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+                updateDevUpgradeDescription();
             }
             break;
         case 'announcement':
@@ -209,7 +199,7 @@ function handleMessage(msg) {
 function createRoom() {
     const playerName = document.getElementById('playerName').value.trim();
     if (!playerName) {
-        alert("You MUST enter a name to create a room.");
+        showLobbyError("You MUST enter a name to create a room.");
         return;
     }
     const password = document.getElementById('roomPassword').value;
@@ -239,13 +229,13 @@ function joinRoom() {
     const playerName = document.getElementById('playerName').value.trim();
     
     if (!playerName) {
-        alert("You MUST enter a name to join a room.");
+        showLobbyError("You MUST enter a name to join a room.");
         return;
     }
     const password = document.getElementById('roomPassword').value;
     
     if (roomCodeInput.length !== 4) {
-        alert('Please enter a valid 4-letter room code');
+        showLobbyError('Please enter a valid 4-letter room code');
         return;
     }
     
@@ -275,6 +265,11 @@ function handleRoomCreated(msg) {
     roomCode = msg.roomCode;
     playerId = msg.playerId;
     isHost = true;
+    isDev = msg.players.find(p => p.id === playerId)?.isDev || false;
+    console.log(`[DEBUG] Room Created: ${roomCode}, PlayerID: ${playerId}, isDev: ${isDev}`);
+    
+    const devStatusEl = document.getElementById('devStatus');
+    if (devStatusEl) devStatusEl.style.display = isDev ? 'block' : 'none';
     
     if (msg.isSinglePlayer) {
         // Single player mode - skip lobby
@@ -305,6 +300,11 @@ function handleRoomCreated(msg) {
 function handleRoomJoined(msg) {
     roomCode = msg.roomCode;
     playerId = msg.playerId;
+    isDev = msg.players.find(p => p.id === playerId)?.isDev || false;
+    console.log(`[DEBUG] Room Joined: ${roomCode}, PlayerID: ${playerId}, isDev: ${isDev}`);
+    
+    const devStatusEl = document.getElementById('devStatus');
+    if (devStatusEl) devStatusEl.style.display = isDev ? 'block' : 'none';
     
     document.getElementById('currentRoomCodeDisplay').textContent = roomCode;
     updatePlayerList(msg.players);
@@ -1053,7 +1053,8 @@ function updateUI() {
     }
     
     // Update Gold
-    const displayGold = player ? player.gold : (gameState.gold || 0);
+    const me = gameState.p?.find(p => p.id === playerId);
+    const displayGold = me ? me.gold : (gameState.gold || 0);
     const goldDisplay = document.getElementById('xpDisplay');
     if (goldDisplay) goldDisplay.textContent = `GOLD: ${displayGold}`;
     
@@ -1612,42 +1613,44 @@ function showAchievements() {
     const list = document.getElementById('achievementsList');
     list.innerHTML = '';
     
-    // We'll need a list of all achievements to show locked ones
-    // For now, just show unlocked ones
-    if (unlockedAchievements.length === 0) {
-        list.innerHTML = '<p style="text-align: center; color: #7f8c8d;">No achievements unlocked yet. Keep playing!</p>';
-    } else {
-        // In a real app, we'd fetch the full list from server
-        // For now, we'll use a static list to show what's earned vs locked
-        const allPossible = [
-            { id: 'survivor_30', name: 'Survivor', desc: 'Survive 30 seconds' },
-            { id: 'slayer_100', name: 'Enemy Slayer', desc: 'Destroy 100 enemies' },
-            { id: 'wave_15', name: 'Veteran', desc: 'Reach Wave 15' }
-        ];
+    const allPossible = [
+        { id: 'survivor_30', name: 'Survivor', desc: 'Survive 30 seconds', hint: 'Survive for at least 30 seconds in any wave.' },
+        { id: 'slayer_100', name: 'Enemy Slayer', desc: 'Destroy 100 enemies', hint: 'Rack up 100 kills across your session.' },
+        { id: 'wave_15', name: 'Veteran', desc: 'Reach Wave 15', hint: 'Complete the final wave and face the boss.' },
+        { id: 'mothership_hero', name: 'Fleet Guardian', desc: 'Mothership hull never below 50%', hint: 'Keep the mothership well-protected until wave 10.' },
+        { id: 'gold_hoarder', name: 'Gold Hoarder', desc: 'Collect 5000 Gold', hint: 'Accumulate 5000 total gold in a single run.' },
+        { id: 'speed_demon', name: 'Speed Demon', desc: 'Reach Max Speed Upgrade', hint: 'Upgrade your ship speed to level 10.' }
+    ];
 
-        allPossible.forEach(ach => {
-            const isUnlocked = unlockedAchievements.includes(ach.id);
-            const div = document.createElement('div');
-            div.style.background = isUnlocked ? 'rgba(46, 204, 113, 0.1)' : 'rgba(255, 255, 255, 0.05)';
-            div.style.border = `1px solid ${isUnlocked ? '#2ecc71' : '#34495e'}`;
-            div.style.padding = '15px';
-            div.style.borderRadius = '8px';
-            div.style.display = 'flex';
-            div.style.justifyContent = 'space-between';
-            div.style.alignItems = 'center';
-            div.style.opacity = isUnlocked ? '1' : '0.5';
+    allPossible.forEach(ach => {
+        const isUnlocked = unlockedAchievements.includes(ach.id);
+        const div = document.createElement('div');
+        div.className = 'achievement-item';
+        div.title = ach.hint; // Hover hint
+        div.style.background = isUnlocked ? 'rgba(46, 204, 113, 0.15)' : 'rgba(255, 255, 255, 0.05)';
+        div.style.border = `1px solid ${isUnlocked ? '#2ecc71' : '#34495e'}`;
+        div.style.padding = '15px';
+        div.style.borderRadius = '8px';
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.alignItems = 'center';
+        div.style.opacity = isUnlocked ? '1' : '0.6';
+        div.style.cursor = 'help';
+        div.style.transition = 'all 0.2s ease';
 
-            div.innerHTML = `
-                <div>
-                    <h4 style="color: ${isUnlocked ? '#2ecc71' : '#bdc3c7'}; margin-bottom: 5px;">${ach.name}</h4>
-                    <p style="font-size: 13px; color: #7f8c8d;">${ach.desc}</p>
-                </div>
-                <div style="font-size: 24px;">${isUnlocked ? '🏆' : '🔒'}</div>
-            `;
-            list.appendChild(div);
-        });
-    }
-    
+        div.onclick = () => {
+            alert(`${ach.name}: ${ach.hint}\nStatus: ${isUnlocked ? 'UNLOCKED' : 'LOCKED'}`);
+        };
+
+        div.innerHTML = `
+            <div style="pointer-events: none;">
+                <h4 style="color: ${isUnlocked ? '#2ecc71' : '#bdc3c7'}; margin: 0 0 5px 0; font-size: 16px;">${ach.name}</h4>
+                <p style="font-size: 12px; color: #7f8c8d; margin: 0;">${ach.desc}</p>
+            </div>
+            <div style="font-size: 24px; pointer-events: none;">${isUnlocked ? '🏆' : '🔒'}</div>
+        `;
+        list.appendChild(div);
+    });
     modal.classList.remove('hidden');
 }
 
@@ -1784,7 +1787,7 @@ function backToLobby() {
 function playSinglePlayer() {
     const name = document.getElementById('playerName').value.trim();
     if (!name) {
-        alert("You MUST enter a name to play.");
+        showLobbyError("You MUST enter a name to play.");
         return;
     }
     connectWebSocket();
@@ -1800,14 +1803,25 @@ function playSinglePlayer() {
             clearInterval(checkOpen);
         }
     }, 100);
+}
     
-    showGame();
+function onGameStarted() {
+    const lobby = document.getElementById('lobby');
+    const gameContainer = document.getElementById('gameContainer');
+    const ui = document.getElementById('ui');
+
+    if (lobby) lobby.classList.add('hidden');
+    if (gameContainer) gameContainer.classList.remove('hidden');
+    if (ui) ui.classList.remove('hidden');
+    
+    console.log("[DEBUG] Game Started, Hotkeys Active");
 }
 
 // Input handling
 function setupInputHandlers() {
+    console.log("[DEBUG] Setting up input handlers...");
     // Keyboard input
-    document.addEventListener('keydown', (e) => {
+    window.addEventListener('keydown', (e) => {
         if (e.key === 'w' || e.key === 'W') keys.w = true;
         if (e.key === 'a' || e.key === 'A') keys.a = true;
         if (e.key === 's' || e.key === 'S') keys.s = true;
@@ -1816,13 +1830,38 @@ function setupInputHandlers() {
         if (e.key === 'ArrowDown') keys.ArrowDown = true;
         if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
         if (e.key === 'ArrowRight') keys.ArrowRight = true;
-        if (e.key === 'Shift') {
-            keys.shift = true;
+        // Game-only Hotkeys
+        if (!document.getElementById('lobby').classList.contains('hidden')) return;
+
+        if (e.key === 'Tab') {
+            console.log(`[DEBUG] Status Hotkey Pressed: ${e.key}`);
+            e.preventDefault();
+            toggleStatusPanel();
+        }
+        if (e.key === '`') {
+            console.log(`[DEBUG] Dev Panel Hotkey Pressed: ${e.key}`);
+            e.preventDefault();
             // Toggle Dev Panel if player is DevMode
-            const player = gameState?.players?.[myId];
-            if (player && player.name && player.name.includes('DevMode')) {
+            if (isDev) {
                 const devPanel = document.getElementById('devPanel');
-                if (devPanel) devPanel.classList.toggle('hidden');
+                if (devPanel) {
+                    devPanel.classList.toggle('hidden');
+                    if (!devPanel.classList.contains('hidden')) {
+                        // Populate upgrade select if empty
+                        const select = document.getElementById('devUpgradeSelect');
+                        if (select && (select.options.length <= 1 || compendiumData.length > 0)) {
+                            if (compendiumData.length === 0) {
+                                ws.send(JSON.stringify({ type: 'get_compendium' }));
+                            } else {
+                                // Already sorted in compendium_data handler
+                                const currentVal = select.value;
+                                select.innerHTML = compendiumData.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+                                if (currentVal) select.value = currentVal;
+                                updateDevUpgradeDescription();
+                            }
+                        }
+                    }
+                }
             }
         }
         if (e.key === ' ') {
@@ -1890,8 +1929,88 @@ function setupInputHandlers() {
 window.addEventListener('load', () => {
     resizeCanvas();
     setupInputHandlers();
+    
+    // Setup UI event listeners
+    const statusBtn = document.getElementById('toggleStatusBtn');
+    statusBtn?.addEventListener('click', () => {
+        toggleStatusPanel();
+    });
+
+    // Make panels draggable
+    const devPanel = document.getElementById('devPanel');
+    const devHandle = document.getElementById('devPanelHandle');
+    if (devPanel && devHandle) makeDraggable(devPanel, devHandle);
+
+    const statusPanel = document.getElementById('statusPanel');
+    if (statusPanel) makeDraggable(statusPanel, statusPanel.querySelector('h3'));
+
+    // Upgrade select listener
+    const devUpgradeSelect = document.getElementById('devUpgradeSelect');
+    devUpgradeSelect?.addEventListener('change', updateDevUpgradeDescription);
+
     connectWebSocket();
+    gameLoop();
 });
+
+function updateDevUpgradeDescription() {
+    const select = document.getElementById('devUpgradeSelect');
+    const desc = document.getElementById('devUpgradeDesc');
+    if (!select || !desc || !compendiumData) return;
+    
+    const upgrade = compendiumData.find(u => u.id === select.value);
+    if (upgrade) {
+        desc.innerHTML = `<strong>${upgrade.name}</strong> (MAX: ${upgrade.max})<br>${upgrade.desc}`;
+        desc.style.borderLeftColor = '#e74c3c';
+        desc.style.display = 'block'; // Ensure visible
+    }
+}
+
+function makeDraggable(el, handle) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.onmousedown = dragMouseDown;
+
+    function dragMouseDown(e) {
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+    }
+
+    function elementDrag(e) {
+        e.preventDefault();
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        el.style.top = (el.offsetTop - pos2) + "px";
+        el.style.left = (el.offsetLeft - pos1) + "px";
+        el.style.transform = 'none'; // Remove centring transform once dragged
+    }
+
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+    }
+}
+
+// Global debug helper
+window.forceShowDev = () => {
+    console.log("[DEBUG] Manually forcing dev panel show");
+    const devPanel = document.getElementById('devPanel');
+    if (devPanel) devPanel.classList.remove('hidden');
+    const devStatus = document.getElementById('devStatus');
+    if (devStatus) devStatus.style.display = 'block';
+    isDev = true;
+};
+
+function showLobbyError(text) {
+    const err = document.getElementById('lobbyError');
+    if (err) {
+        err.textContent = text;
+        setTimeout(() => { if (err.textContent === text) err.textContent = ''; }, 3000);
+    }
+}
 
 window.addEventListener('resize', resizeCanvas);
 function handleNavigationOptions(msg) {
@@ -2096,6 +2215,7 @@ function loadLeaderboard(sortField) {
             }
             
             tbody.innerHTML = entries.map((e, i) => {
+                const isDev = e.isDev || (e.names && e.names.includes('[DEV]'));
                 const mins = Math.floor(e.timeSeconds / 60).toString().padStart(2,'0');
                 const secs = (e.timeSeconds % 60).toString().padStart(2,'0');
                 const rowBg = i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
@@ -2106,10 +2226,15 @@ function loadLeaderboard(sortField) {
                 const modeBadge = e.isCoop
                     ? `<span style="color:#3498db;font-size:11px;">CO-OP ${e.playerCount}P</span>`
                     : '<span style="color:#95a5a6;font-size:11px;">SOLO</span>';
+                
+                // Dev runs don't get a rank number
+                const rankDisplay = isDev ? '<span style="color:#e74c3c;font-size:10px;">DEV</span>' : (i + 1);
+                const nameDisplay = isDev ? `<span style="color:#e74c3c;font-style:italic;">${e.names}</span>` : e.names;
+
                 return `
-                    <tr style="background:${rowBg}; border-bottom:1px solid rgba(255,255,255,0.05);">
-                        <td style="padding:10px 6px; color:${goldColor}; font-weight:bold;">${i+1}</td>
-                        <td style="padding:10px 6px; color:#ecf0f1;">${e.names || 'Unknown'}</td>
+                    <tr style="background:${rowBg}; border-bottom:1px solid rgba(255,255,255,0.05); ${isDev ? 'opacity: 0.8;' : ''}">
+                        <td style="padding:10px 6px; color:${isDev ? '#e74c3c' : goldColor}; font-weight:bold;">${rankDisplay}</td>
+                        <td style="padding:10px 6px; color:#ecf0f1;">${nameDisplay}</td>
                         <td style="padding:10px 6px; text-align:center;">${modeBadge}</td>
                         <td style="padding:10px 6px; text-align:center; color:#2ecc71; font-weight:bold;">${e.waves}</td>
                         <td style="padding:10px 6px; text-align:center; color:#e74c3c;">${e.kills}</td>
@@ -2149,7 +2274,8 @@ handleGameOver = (msg) => {
     document.getElementById('endgameVoteModal').classList.add('hidden');
     originalHandleGameOver(msg);
 };
-function sendDevAction(action, data) {
+
+function sendDevAction(action, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
             type: 'dev_action',
