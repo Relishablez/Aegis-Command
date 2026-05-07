@@ -94,6 +94,18 @@ class RoomManager {
     // Apply additional player data
     Object.assign(player, playerData);
     player.ws = ws;
+
+    // Handle DevMode naming and duplicate detection
+    let finalName = playerData.name || 'Pilot';
+    if (finalName.toLowerCase() === 'devmode') {
+      let devCount = 0;
+      room.players.forEach(p => {
+        if (p.name && p.name.includes('DevMode')) devCount++;
+      });
+      finalName = devCount === 0 ? 'DevMode' : `DevMode[${devCount}]`;
+      player.isDev = true;
+    }
+    player.name = finalName;
     
     room.players.set(playerId, player);
     room.lastActivity = Date.now();
@@ -456,6 +468,42 @@ class RoomManager {
       const { endWave } = require('../game/waveManager');
       // After boss and super upgrade, the wave is effectively over, proceed to navigation
       endWave(room, false);
+    }
+  handleDevAction(room, playerId, action, data) {
+    const player = room.players.get(playerId);
+    if (!player || !player.isDev) return;
+
+    const gs = room.gameState;
+    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+
+    switch (action) {
+      case 'add_gold':
+        player.gold += (data.amount || 1000);
+        break;
+      case 'set_stat':
+        if (data.stat === 'fireRate') player.fireRate = Math.max(1, (player.fireRate || 8) - (data.value || 1));
+        if (data.stat === 'damage') player.damage = (player.damage || 1) + (data.value || 1);
+        if (data.stat === 'speed') player.speed = (player.speed || 4) + (data.value || 1);
+        break;
+      case 'apply_upgrade':
+        const upgradeId = data.upgradeId;
+        if (!gs.playerUpgrades[playerId]) gs.playerUpgrades[playerId] = {};
+        const currentLevel = gs.playerUpgrades[playerId][upgradeId] || 0;
+        gs.playerUpgrades[playerId][upgradeId] = currentLevel + 1;
+        recalculatePlayerStats(player, gs);
+        break;
+      case 'mothership_heal':
+        gs.mothership.hull = gs.mothership.maxHull;
+        break;
+    }
+
+    // Broadcast update
+    if (room.broadcastToRoom) {
+      room.broadcastToRoom({
+        type: 'dev_action_applied',
+        playerId: playerId,
+        action: action
+      });
     }
   }
 }
