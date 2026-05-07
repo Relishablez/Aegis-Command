@@ -313,8 +313,8 @@ class RoomManager {
       
       if (gs.mothership.hull > gs.mothership.maxHull) gs.mothership.hull = gs.mothership.maxHull;
       
-      // Remove merchant after purchase
-      gs.merchants.splice(merchantIndex, 1);
+      // Increase cost for the next purchase
+      upgrade.cost = Math.floor(upgrade.cost * 1.5);
       
       // Notify player
       player.ws.send(JSON.stringify({
