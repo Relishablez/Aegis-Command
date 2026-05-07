@@ -2488,3 +2488,18 @@ function sendDevAction(action, data = {}) {
         }));
     }
 }
+
+// Helper functions for interpolation
+function dist(p1, p2) {
+    if (!p1 || !p2) return 0;
+    return Math.hypot((p2.x || 0) - (p1.x || 0), (p2.y || 0) - (p1.y || 0));
+}
+
+function angle(p1, p2) {
+    if (!p1 || !p2) return 0;
+    return Math.atan2((p2.y || 0) - (p1.y || 0), (p2.x || 0) - (p1.x || 0));
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
