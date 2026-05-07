@@ -286,12 +286,5 @@ function setupWebSocketHandlers(wss, roomManager) {
   });
 }
 
-// Helper function for password verification
-function verifyPassword(password, hash) {
-  const { hashPassword } = require('../utils/helpers');
-  if (!hash) return true; // No password required
-  if (!password) return false;
-  return hashPassword(password) === hash;
-}
 
 module.exports = setupWebSocketHandlers;
