@@ -467,7 +467,7 @@ function updateEnemies(room) {
         const { triggerSuperUpgrade, gameOver } = require('./waveManager');
         if (gs.wave >= 15) {
           triggerEndgameVoting(room);
-          return;
+          continue;
         } else {
           triggerSuperUpgrade(room);
         }
@@ -632,24 +632,24 @@ function updateProjectiles(room) {
     }
     
     if (b.friendly) {
-      // Check PVP collisions
       if (gs.encounterType === 'pvp') {
-        room.players.forEach(p => {
+        let hit = false;
+        for (const p of room.players.values()) {
           if (p.id !== b.ownerId && p.alive && dist(b, p) < p.radius + 10) {
-            p.hull -= (b.damage || 1) * 2; // Extra damage in PVP for faster fun
+            p.hull -= (b.damage || 1) * 2;
             if (p.hull <= 0) {
               p.alive = false;
-              p.respawnTimer = 60; // Faster respawn in PVP
-              // Update score
+              p.respawnTimer = 60;
               if (gs.pvpScores) {
                 gs.pvpScores[b.ownerId] = (gs.pvpScores[b.ownerId] || 0) + 1;
               }
             }
             gs.projectiles.splice(i, 1);
-            return;
+            hit = true;
+            break;
           }
-        });
-        if (!gs.projectiles[i]) continue;
+        }
+        if (hit) continue;
       }
 
       // Check enemy collisions
@@ -797,7 +797,7 @@ function updateProjectiles(room) {
         if (anyPlayerAlive) {
           // Invulnerable!
           gs.projectiles.splice(i, 1);
-          return;
+          continue;
         }
         
         if (m.shield > 0) {
@@ -814,11 +814,13 @@ function updateProjectiles(room) {
       }
 
       // Check player collisions
-      room.players.forEach(p => {
+      let playerHit = false;
+      for (const p of room.players.values()) {
         if (p.alive && dist(b, p) < p.radius + 5) {
           if (p.powerups.invincible > 0) {
              gs.projectiles.splice(i, 1);
-             return;
+             playerHit = true;
+             break;
           }
           
           if (p.shield > 0) {
@@ -835,10 +837,14 @@ function updateProjectiles(room) {
             p.alive = false;
             p.respawnTimer = 180;
             p.hull = 0;
+            p.lives--;
           }
           gs.projectiles.splice(i, 1);
+          playerHit = true;
+          break;
         }
-      });
+      }
+      if (playerHit) continue;
     }
   }
 }
