@@ -251,6 +251,8 @@ class RoomManager {
         pinnedId: player.pinnedUpgradeId
       }));
     }
+  }
+
   handleVoteNode(room, playerId, nodeId) {
     handleVoteNode(room, playerId, nodeId);
   }
