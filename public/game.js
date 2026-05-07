@@ -283,7 +283,8 @@ function getCurrentRenderState() {
     const duration = s2.receiveTime - s1.receiveTime;
     if (duration === 0) return s1.state;
     
-    const t = (renderTime - s1.receiveTime) / duration;
+    // Clamp t between 0 and 1 to prevent overshoot/backtrack during lag
+    const t = Math.max(0, Math.min(1, (renderTime - s1.receiveTime) / duration));
     
     // Interpolate positions
     // Shallow copy the state to avoid expensive JSON operations
@@ -297,9 +298,9 @@ function getCurrentRenderState() {
     interpolated.a = s1.state.a ? s1.state.a.map(a => ({ ...a })) : [];
     interpolated.b = s1.state.b ? s1.state.b.map(b => ({ ...b })) : [];
     
-    // Interpolate players
+    // Interpolate players by ID
     if (s1.state.p && s2.state.p) {
-        interpolated.p = s1.state.p.map((p1, idx) => {
+        interpolated.p = s1.state.p.map(p1 => {
             const p2 = s2.state.p.find(p => p.id === p1.id);
             if (p2) {
                 return {
@@ -327,11 +328,11 @@ function getCurrentRenderState() {
         };
     }
     
-    // Interpolate enemies
+    // Interpolate enemies by ID
     if (s1.state.e && s2.state.e) {
-        interpolated.e = s1.state.e.map((e1, idx) => {
-            const e2 = s2.state.e[idx];
-            if (e2 && idx < s2.state.e.length) {
+        interpolated.e = s1.state.e.map(e1 => {
+            const e2 = s2.state.e.find(e => e.id === e1.id) || s2.state.e.find((e, idx) => idx === s1.state.e.indexOf(e1)); // fallback to index if no ID
+            if (e2) {
                 return {
                     ...e1,
                     x: lerp(e1.x, e2.x, t),
@@ -342,11 +343,11 @@ function getCurrentRenderState() {
         });
     }
     
-    // Interpolate asteroids
+    // Interpolate asteroids by ID
     if (s1.state.a && s2.state.a) {
-        interpolated.a = s1.state.a.map((a1, idx) => {
-            const a2 = s2.state.a[idx];
-            if (a2 && idx < s2.state.a.length) {
+        interpolated.a = s1.state.a.map(a1 => {
+            const a2 = s2.state.a.find(a => a.id === a1.id);
+            if (a2) {
                 return {
                     ...a1,
                     x: lerp(a1.x, a2.x, t),
@@ -357,16 +358,26 @@ function getCurrentRenderState() {
             return a1;
         });
     }
-
-    // Extrapolate projectiles (bullets) for smoother motion
-    // Using authoritative server timestamp (s1.state.t) for consistent speed
-    const extrapolationTime = (Date.now() + serverTimeOffset - s1.state.t) / 1000;
-    if (interpolated.b) {
-        interpolated.b = interpolated.b.map(b => ({
-            ...b,
-            x: b.x + (b.vx || 0) * (extrapolationTime * 60),
-            y: b.y + (b.vy || 0) * (extrapolationTime * 60)
-        }));
+    
+    // Interpolate projectiles by ID (Fixes vibrating)
+    if (s1.state.b && s2.state.b) {
+        interpolated.b = s1.state.b.map(b1 => {
+            const b2 = s2.state.b.find(b => b.id === b1.id);
+            if (b2) {
+                return {
+                    ...b1,
+                    x: lerp(b1.x, b2.x, t),
+                    y: lerp(b1.y, b2.y, t)
+                };
+            } else {
+                // If it died in s2, extrapolate for the remaining bit of t
+                return {
+                    ...b1,
+                    x: b1.x + (b1.vx || 0) * t * 2, // approximation
+                    y: b1.y + (b1.vy || 0) * t * 2
+                };
+            }
+        });
     }
     
     return interpolated;
