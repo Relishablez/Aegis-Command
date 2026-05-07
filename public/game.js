@@ -15,6 +15,30 @@ let isDev = false;
 let compendiumData = [];
 let unlockedAchievements = JSON.parse(localStorage.getItem('aegis_achievements') || '[]');
 
+// Network Smoothing
+let stateHistory = [];
+const INTERPOLATION_DELAY = 100;
+let renderState = null;
+let serverTimeOffset = 0;
+let lastFrameTime = 0;
+const MAX_FPS = 160;
+const FRAME_MIN_TIME = 1000 / MAX_FPS;
+
+window.setFpsLimit = function(limit) {
+    const fps = parseInt(limit, 10);
+    const minTime = 1000 / fps;
+    // We update the local constants used in gameLoop
+    window.currentFrameMinTime = minTime;
+    console.log(`[SYSTEM] FPS limit set to ${fps} (${minTime.toFixed(2)}ms per frame)`);
+};
+window.currentFrameMinTime = FRAME_MIN_TIME;
+
+// Screen Shake
+let shakeIntensity = 0;
+function applyShake(amount) {
+    shakeIntensity = Math.min(shakeIntensity + amount, 20);
+}
+
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -94,6 +118,8 @@ function connectWebSocket() {
     
     ws.onclose = () => {
         console.log('Disconnected from server');
+        const overlay = document.getElementById('reconnectOverlay');
+        if (overlay) overlay.style.display = 'flex';
         setTimeout(() => connectWebSocket(), 3000);
     };
     
@@ -110,6 +136,14 @@ function handleMessage(msg) {
             break;
         case 'room_joined':
             handleRoomJoined(msg);
+            const rcDisplay = document.getElementById('roomCodeDisplay');
+            if (rcDisplay) {
+                rcDisplay.innerText = `ROOM: ${msg.roomCode}`;
+                rcDisplay.classList.remove('hidden');
+            }
+            // Hide overlay if it was visible
+            const overlay = document.getElementById('reconnectOverlay');
+            if (overlay) overlay.style.display = 'none';
             break;
         case 'player_joined':
             handlePlayerJoined(msg);
@@ -121,7 +155,10 @@ function handleMessage(msg) {
             onGameStarted();
             break;
         case 'state':
-            gameState = msg;
+            handleState(msg);
+            break;
+        case 'pong':
+            handlePong(msg);
             break;
         case 'upgrade':
             handleUpgradeMenu(msg);
@@ -188,11 +225,131 @@ function handleMessage(msg) {
             handleSuperUpgradeMenu(msg);
             break;
         case 'pong':
-            const latency = Date.now() - msg.clientTime;
-            const debugPing = document.getElementById('debugPing');
-            if (debugPing) debugPing.textContent = latency + 'ms';
+            handlePong(msg);
             break;
     }
+}
+
+function handleState(msg) {
+    const now = Date.now();
+    
+    // Buffer the state
+    stateHistory.push({
+        state: msg,
+        receiveTime: now
+    });
+    
+    // Limit buffer size
+    if (stateHistory.length > 30) stateHistory.shift();
+    
+    // Set immediate gameState for non-positional UI elements
+    gameState = msg;
+}
+
+function handlePong(msg) {
+    const now = Date.now();
+    const latency = now - msg.clientTime;
+    
+    // Simple clock sync: serverTimeOffset + now = serverTime
+    // msg.serverTime is when the server processed our ping
+    serverTimeOffset = msg.serverTime - (now - latency / 2);
+    
+    const debugPing = document.getElementById('debugPing');
+    if (debugPing) debugPing.textContent = latency + 'ms';
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function dist(p1, p2) {
+    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+function getCurrentRenderState() {
+    if (stateHistory.length < 2) return gameState;
+    
+    const now = Date.now();
+    const renderTime = now - INTERPOLATION_DELAY;
+    
+    // Find two states to interpolate between
+    let i = stateHistory.length - 1;
+    while (i > 0 && stateHistory[i].receiveTime > renderTime) {
+        i--;
+    }
+    
+    const s1 = stateHistory[i];
+    const s2 = stateHistory[i + 1];
+    
+    if (!s1 || !s2) return s1 ? s1.state : gameState;
+    
+    const duration = s2.receiveTime - s1.receiveTime;
+    if (duration === 0) return s1.state;
+    
+    const t = (renderTime - s1.receiveTime) / duration;
+    
+    // Interpolate positions
+    const interpolated = JSON.parse(JSON.stringify(s1.state));
+    
+    // Interpolate players
+    if (s2.state.p) {
+        interpolated.p.forEach((p1, idx) => {
+            const p2 = s2.state.p[idx];
+            if (p2 && p1.id === p2.id) {
+                p1.x = lerp(p1.x, p2.x, t);
+                p1.y = lerp(p1.y, p2.y, t);
+                // Angle interpolation (handle wrap-around)
+                let diff = p2.angle - p1.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                p1.angle = p1.angle + diff * t;
+            }
+        });
+    }
+    
+    // Interpolate mothership
+    if (s1.state.m && s2.state.m) {
+        interpolated.m.x = lerp(s1.state.m.x, s2.state.m.x, t);
+        interpolated.m.y = lerp(s1.state.m.y, s2.state.m.y, t);
+    }
+    
+    // Interpolate enemies
+    if (s1.state.e && s2.state.e) {
+        interpolated.e.forEach((e1, idx) => {
+            const e2 = s2.state.e[idx];
+            if (e2 && idx < s2.state.e.length) {
+                e1.x = lerp(e1.x, e2.x, t);
+                e1.y = lerp(e1.y, e2.y, t);
+            }
+        });
+    }
+    
+    // Interpolate asteroids
+    if (s1.state.a && s2.state.a) {
+        interpolated.a.forEach((a1, idx) => {
+            const a2 = s2.state.a[idx];
+            if (a2 && idx < s2.state.a.length) {
+                a1.x = lerp(a1.x, a2.x, t);
+                a1.y = lerp(a1.y, a2.y, t);
+                a1.rot = lerp(a1.rot, a2.rot, t);
+            }
+        });
+    }
+
+    // Interpolate projectiles (bullets)
+    if (s1.state.b && s2.state.b) {
+        interpolated.b.forEach((b1, idx) => {
+            const b2 = s2.state.b[idx];
+            // Since bullets are added/removed frequently, we only lerp if we find a likely match
+            // Bullets don't have IDs usually, so we check distance and angle parity
+            if (b2 && Math.abs(b1.angle - b2.angle) < 0.1 && dist(b1, b2) < 50) {
+                b1.x = lerp(b1.x, b2.x, t);
+                b1.y = lerp(b1.y, b2.y, t);
+            }
+        });
+    }
+    
+    return interpolated;
 }
 
 // Room management
@@ -204,7 +361,7 @@ function createRoom() {
     }
     const password = document.getElementById('roomPassword').value;
     const maxPlayersInput = document.getElementById('roomMaxPlayers');
-    const maxPlayers = maxPlayersInput ? parseInt(maxPlayersInput.value, 10) : 4;
+    const maxPlayers = maxPlayersInput ? parseInt(maxPlayersInput.value, 10) : 8;
     
     // Advanced settings
     const waveDurationInput = document.getElementById('waveDuration');
@@ -360,8 +517,19 @@ function updatePlayerList(players) {
 }
 
 // Game loop
-function gameLoop() {
-    if (!gameState) {
+function gameLoop(currentTime) {
+    // FPS Limiter
+    const delta = currentTime - lastFrameTime;
+    if (delta < (window.currentFrameMinTime || FRAME_MIN_TIME)) {
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+    lastFrameTime = currentTime;
+
+    // Get the interpolated state for rendering
+    renderState = getCurrentRenderState();
+    
+    if (!renderState) {
         requestAnimationFrame(gameLoop);
         return;
     }
@@ -370,8 +538,22 @@ function gameLoop() {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     
+    // Screen Shake
+    if (shakeIntensity > 0) {
+        ctx.save();
+        const sx = (Math.random() - 0.5) * shakeIntensity;
+        const sy = (Math.random() - 0.5) * shakeIntensity;
+        ctx.translate(sx, sy);
+        shakeIntensity *= 0.9;
+        if (shakeIntensity < 0.1) shakeIntensity = 0;
+    }
+
     // Draw game entities
-    drawGame();
+    drawGame(renderState);
+
+    if (shakeIntensity > 0) {
+        ctx.restore();
+    }
     
     // Update UI
     updateUI();
@@ -382,14 +564,14 @@ function gameLoop() {
     }
     
     // Render escort target if applicable
-    if (gameState.w && gameState.w.encounterType === 'escort' && gameState.w.targetX) {
+    if (renderState.w && renderState.w.encounterType === 'escort' && renderState.w.targetX) {
         ctx.save();
         
         // Draw animated path from mothership to jump gate
-        if (gameState.m) {
+        if (renderState.m) {
             ctx.beginPath();
-            ctx.moveTo(gameState.m.x, gameState.m.y);
-            ctx.lineTo(gameState.w.targetX, gameState.w.targetY);
+            ctx.moveTo(renderState.m.x, renderState.m.y);
+            ctx.lineTo(renderState.w.targetX, renderState.w.targetY);
             ctx.strokeStyle = 'rgba(52, 152, 219, 0.3)';
             ctx.lineWidth = 4;
             ctx.setLineDash([15, 15]);
@@ -397,12 +579,12 @@ function gameLoop() {
             ctx.stroke();
             
             // Draw progress text halfway
-            const totalDist = Math.hypot(gameState.w.targetX - (GAME_WIDTH / 2), gameState.w.targetY - (GAME_HEIGHT / 2));
-            const currDist = Math.hypot(gameState.w.targetX - gameState.m.x, gameState.w.targetY - gameState.m.y);
+            const totalDist = Math.hypot(renderState.w.targetX - (GAME_WIDTH / 2), renderState.w.targetY - (GAME_HEIGHT / 2));
+            const currDist = Math.hypot(renderState.w.targetX - renderState.m.x, renderState.w.targetY - renderState.m.y);
             const progress = Math.max(0, Math.min(1, 1 - (currDist / totalDist)));
             
-            const midX = (gameState.m.x + gameState.w.targetX) / 2;
-            const midY = (gameState.m.y + gameState.w.targetY) / 2;
+            const midX = (renderState.m.x + renderState.w.targetX) / 2;
+            const midY = (renderState.m.y + renderState.w.targetY) / 2;
             
             ctx.setLineDash([]);
             ctx.fillStyle = '#3498db';
@@ -412,7 +594,7 @@ function gameLoop() {
             ctx.fillText(`[ ${Math.floor(progress * 100)}% ]`, midX, midY);
         }
 
-        ctx.translate(gameState.w.targetX, gameState.w.targetY);
+        ctx.translate(renderState.w.targetX, renderState.w.targetY);
         
         // Draw jump gate icon
         ctx.strokeStyle = '#3498db';
@@ -453,11 +635,11 @@ function gameLoop() {
 }
 
 // Drawing functions
-function drawGame() {
-    if (!gameState) return;
+function drawGame(gs) {
+    if (!gs) return;
     
     // Draw pickups
-    gameState.c?.forEach(pickup => {
+    gs.c?.forEach(pickup => {
         ctx.save();
         ctx.translate(pickup.x, pickup.y);
         
@@ -496,7 +678,7 @@ function drawGame() {
     });
     
     // Draw asteroids
-    gameState.a?.forEach(asteroid => {
+    gs.a?.forEach(asteroid => {
         ctx.save();
         ctx.translate(asteroid.x, asteroid.y);
         ctx.rotate(asteroid.rot);
@@ -521,7 +703,7 @@ function drawGame() {
     });
     
     // Draw enemies
-    gameState.e?.forEach(enemy => {
+    gs.e?.forEach(enemy => {
         ctx.save();
         ctx.translate(enemy.x, enemy.y);
         ctx.rotate(enemy.angle);
@@ -590,7 +772,7 @@ function drawGame() {
     });
     
     // Draw drones
-    gameState.d?.forEach(drone => {
+    gs.d?.forEach(drone => {
         ctx.save();
         ctx.translate(drone.x, drone.y);
         
@@ -615,13 +797,13 @@ function drawGame() {
     });
     
     // Draw mothership
-    if (gameState.m) {
+    if (gs.m) {
         ctx.save();
-        ctx.translate(gameState.m.x, gameState.m.y);
+        ctx.translate(gs.m.x, gs.m.y);
         
         // Auto-Turret Range Indicator
-        if (gameState.m.autoTurret > 0) {
-            const range = gameState.m.turretRange || 500;
+        if (gs.m.autoTurret > 0) {
+            const range = gs.m.turretRange || 500;
             const pulse = (Math.sin(Date.now() / 500) + 1) / 2;
             ctx.strokeStyle = `rgba(52, 152, 219, ${0.1 + pulse * 0.1})`;
             ctx.setLineDash([10, 10]);
@@ -714,7 +896,7 @@ function drawGame() {
     });
     
     // Draw players
-    gameState.p?.forEach(player => {
+    gs.p?.forEach(player => {
         ctx.save();
         ctx.translate(player.x, player.y);
         ctx.rotate(player.angle);
@@ -754,6 +936,28 @@ function drawGame() {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+
+        // Draw Melee Spikes if upgraded
+        if (player.upgradeLevels?.ram_spikes > 0) {
+            ctx.strokeStyle = '#bdc3c7';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) {
+                const sAngle = -Math.PI/4 + (i * Math.PI/4);
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(sAngle) * pr, Math.sin(sAngle) * pr);
+                ctx.lineTo(Math.cos(sAngle) * (pr + 8), Math.sin(sAngle) * (pr + 8));
+                ctx.stroke();
+            }
+            
+            // Trigger screen shake if close to enemy (local player only)
+            if (player.id === playerId) {
+                gs.e?.forEach(enemy => {
+                    if (dist(player, enemy) < pr + enemy.radius + 10) {
+                        applyShake(0.3);
+                    }
+                });
+            }
+        }
         
         ctx.restore();
         
@@ -786,7 +990,7 @@ function drawGame() {
     });
     
     // Draw projectiles
-    gameState.b?.forEach(bullet => {
+    gs.b?.forEach(bullet => {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
         
@@ -1275,7 +1479,7 @@ function showMerchantUI(merch, player) {
     
     panel.classList.remove('hidden');
     document.getElementById('merchUpgradeName').textContent = merch.upgrade.name;
-    document.getElementById('merchUpgradeDesc').textContent = merch.upgrade.desc;
+    document.getElementById('merchUpgradeDesc').textContent = merch.upgrade.description;
     
     const cost = merch.upgrade.cost;
     const costEl = document.getElementById('merchUpgradeCost');
@@ -1959,7 +2163,7 @@ function updateDevUpgradeDescription() {
     
     const upgrade = compendiumData.find(u => u.id === select.value);
     if (upgrade) {
-        desc.innerHTML = `<strong>${upgrade.name}</strong> (MAX: ${upgrade.max})<br>${upgrade.desc}`;
+        desc.innerHTML = `<strong>${upgrade.name}</strong> (MAX: ${upgrade.max})<br>${upgrade.description}`;
         desc.style.borderLeftColor = '#e74c3c';
         desc.style.display = 'block'; // Ensure visible
     }
