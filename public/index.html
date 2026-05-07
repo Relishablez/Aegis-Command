@@ -403,8 +403,6 @@
         #upgradeMenu,
         #superUpgradeMenu {
             position: absolute;
-            top: 50%;
-            left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(10, 10, 10, 0.95);
             border: 3px solid #3498db;
@@ -482,6 +480,51 @@
             color: #bdc3c7;
             margin-bottom: 30px;
             font-size: 18px;
+        }
+
+        .room-code-display {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(52, 152, 219, 0.4);
+            border-radius: 8px;
+            padding: 5px 12px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            letter-spacing: 1px;
+            color: #3498db;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            display: inline-block;
+        }
+
+        #reconnectOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            pointer-events: auto;
+        }
+
+        .reconnect-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(52, 152, 219, 0.2);
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin_reconnect 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin_reconnect {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -569,6 +612,7 @@
                     <div id="vitalsList"></div>
                 </div>
 
+                <div id="roomCodeDisplay" class="room-code-display hidden" style="position: absolute; top: 20px; right: 20px; z-index: 500; background: rgba(0,0,0,0.6); padding: 5px 15px; border: 1px solid #3498db; border-radius: 5px; font-weight: bold; color: #3498db; font-family: Orbitron;">ROOM: ----</div>
                 <div class="xp-display" id="xpDisplay">GOLD: 0</div>
             </div>
 
@@ -637,12 +681,8 @@
 
                     <div class="form-group">
                         <label for="roomMaxPlayers">Max Players (1-8)</label>
-                        <input type="number" id="roomMaxPlayers" value="4" min="1" max="8"
-                            style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;"
-                            onchange="document.getElementById('maxPlayersWarning').style.display = this.value > 4 ? 'block' : 'none'">
-                        <div id="maxPlayersWarning"
-                            style="color: #e74c3c; font-size: 12px; margin-top: 5px; display: none;">Warning: Playing
-                            with more than 4 players can be inconsistent and cause stability issues!</div>
+                        <input type="number" id="roomMaxPlayers" value="8" min="1" max="8"
+                            style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
                     </div>
 
                     <details style="margin-bottom: 20px; color: #bdc3c7; font-size: 14px;">
@@ -681,6 +721,20 @@
                     <div class="button-group">
                         <button class="btn btn-secondary" onclick="showCompendium()">Upgrade Compendium</button>
                         <button class="btn btn-secondary" onclick="showAchievements()">Achievements</button>
+                    </div>
+
+                    <!-- Inline Error Display                        <div id="maxPlayersWarning"
+                            style="color: #e74c3c; font-size: 12px; margin-top: 5px; display: none;">Warning: Playing
+                            with more than 4 players can be inconsistent and cause stability issues!</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="fpsLimit">Performance Mode</label>
+                        <select id="fpsLimit" onchange="window.setFpsLimit(this.value)" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
+                            <option value="160">Maximum Fluidity (160 FPS)</option>
+                            <option value="60">Energy Saver (60 FPS)</option>
+                            <option value="30">Cinematic (30 FPS)</option>
+                        </select>
                     </div>
 
                     <!-- Inline Error Display -->
@@ -970,6 +1024,16 @@
     </div>
 
     <script src="game.js?v=2"></script>
+    <!-- Reconnect Overlay -->
+    <div id="reconnectOverlay">
+        <div class="reconnect-spinner"></div>
+        <h2 style="color: #3498db; margin-bottom: 10px;">Connection Lost</h2>
+        <p style="color: #bdc3c7; margin-bottom: 20px;">Attempting to reconnect to your session...</p>
+        <div style="display: flex; gap: 15px;">
+            <button class="btn" onclick="location.reload()" style="background: #3498db; width: 150px;">RETRY</button>
+            <button class="btn" onclick="document.getElementById('reconnectOverlay').style.display='none'" style="background: #7f8c8d; width: 150px;">CLOSE</button>
+        </div>
+    </div>
 </body>
 
 </html>
