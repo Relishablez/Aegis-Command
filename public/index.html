@@ -563,7 +563,24 @@
         <div id="lobby">
             <div class="lobby-content">
                 <h1>Aegis Command</h1>
-                
+
+                <!-- Live Server Stats -->
+                <div id="liveStats" style="
+                    display: flex; gap: 20px; justify-content: center; align-items: center;
+                    margin-bottom: 20px; padding: 10px 20px;
+                    background: rgba(52,152,219,0.08); border: 1px solid rgba(52,152,219,0.25);
+                    border-radius: 10px; font-size: 13px; letter-spacing: 0.5px;
+                ">
+                    <span style="color:#bdc3c7;">LIVE:</span>
+                    <span style="color:#2ecc71;">● <span id="statsSolo">0</span> Solo</span>
+                    <span style="color:#3498db;">● <span id="statsCoop">0</span> Co-op</span>
+                    <span style="color:#bdc3c7; font-size:11px;">(<span id="statsTotal">0</span> pilots online)</span>
+                    <button class="btn btn-secondary" onclick="showLeaderboard()" style="
+                        padding:4px 12px; font-size:11px; margin-left:10px;
+                        border-color: rgba(241,196,15,0.6); color: #f1c40f;
+                    ">🏆 Leaderboard</button>
+                </div>
+
                 <div id="joinRoomForm">
                     <div class="form-group">
                         <label for="playerName">Player Name</label>
@@ -718,6 +735,42 @@
         </div>
 
         <button id="toggleStatusBtn" class="btn" style="position: absolute; bottom: 50px; left: 50px; z-index: 400; padding: 10px 20px; font-size: 14px; border-color: #3498db;">View Fleet Status</button>
+
+        <!-- Leaderboard Modal -->
+        <div id="leaderboardModal" class="hidden" style="
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(8,8,18,0.97); border: 2px solid rgba(241,196,15,0.5);
+            border-radius: 15px; padding: 30px; z-index: 300;
+            width: 720px; max-width: 95vw; max-height: 80vh;
+            overflow-y: auto; backdrop-filter: blur(10px);
+            box-shadow: 0 0 60px rgba(241,196,15,0.15);
+        ">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="color:#f1c40f; margin:0; font-size:20px; letter-spacing:2px;">🏆 LEADERBOARD</h2>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-secondary" onclick="loadLeaderboard('waves')"  id="lb-sort-waves"  style="padding:4px 12px;font-size:11px;">Waves ↕</button>
+                    <button class="btn btn-secondary" onclick="loadLeaderboard('kills')"  id="lb-sort-kills"  style="padding:4px 12px;font-size:11px;">Kills ↕</button>
+                    <button class="btn btn-secondary" onclick="loadLeaderboard('time')"   id="lb-sort-time"   style="padding:4px 12px;font-size:11px;">Time ↕</button>
+                    <button class="btn btn-secondary" onclick="hideLeaderboard()" style="padding:4px 12px;font-size:11px;border-color:#e74c3c;color:#e74c3c;">✕ Close</button>
+                </div>
+            </div>
+            <table id="leaderboardTable" style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                    <tr style="color:#bdc3c7; border-bottom:1px solid rgba(255,255,255,0.1); text-align:left;">
+                        <th style="padding:8px 6px;">#</th>
+                        <th style="padding:8px 6px;">Pilots</th>
+                        <th style="padding:8px 6px; text-align:center;">Mode</th>
+                        <th style="padding:8px 6px; text-align:center;">Waves</th>
+                        <th style="padding:8px 6px; text-align:center;">Kills</th>
+                        <th style="padding:8px 6px; text-align:center;">Time</th>
+                        <th style="padding:8px 6px; text-align:center;">Result</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <tr><td colspan="7" style="text-align:center;color:#7f8c8d;padding:30px;">No entries yet. Complete a run to appear here!</td></tr>
+                </tbody>
+            </table>
+        </div>
 
         <style>
             @keyframes slideInRight {
