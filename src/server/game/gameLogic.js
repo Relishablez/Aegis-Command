@@ -41,7 +41,7 @@ function updatePlayer(p, room) {
     dx /= len; dy /= len;
     
     // Dash handling
-    if (p.keys.space && p.dashCooldown <= 0) {
+    if (p.keys.shift && p.dashCooldown <= 0) {
       p.dashDuration = 10;
       p.dashCooldown = 90; // 1.5s cooldown
     }
@@ -64,7 +64,14 @@ function updatePlayer(p, room) {
   p.x = clamp(p.x, p.radius, GAME_WIDTH - p.radius);
   p.y = clamp(p.y, p.radius, GAME_HEIGHT - p.radius);
   
-  p.angle = Math.atan2(p.mouseY - p.y, p.mouseX - p.x);
+  // Trackpad aiming with Arrow Keys
+  if (p.keys.ArrowLeft) {
+    p.angle -= 0.1;
+  } else if (p.keys.ArrowRight) {
+    p.angle += 0.1;
+  } else if (p.mouseX !== undefined && p.mouseY !== undefined) {
+    p.angle = Math.atan2(p.mouseY - p.y, p.mouseX - p.x);
+  }
   
   // Powerup timers
   if (p.powerups.rapidFire > 0) p.powerups.rapidFire--;
@@ -403,7 +410,10 @@ function updateEnemies(room) {
           triggerSuperUpgrade(room);
         }
       }
-      let baseGold = Math.floor((e.diamond ? 100 : 50) * gs.goldMultiplier);
+      
+      const playerScale = Math.max(1, Math.sqrt(room.players.size)); // Reduces gold per player as group size increases
+      const hostScale = room.settings?.goldMultiplier || 1.0;
+      let baseGold = Math.floor((e.diamond ? 100 : 50) * gs.goldMultiplier * hostScale / playerScale);
       const teamXP = e.diamond ? 50 : 25;
       
       // Double Gold Powerup
@@ -506,7 +516,10 @@ function updateAsteroids(room) {
     });
     
     if (a.hull <= 0) {
-      const goldGain = Math.floor(40 * gs.goldMultiplier);
+      const playerScale = Math.max(1, Math.sqrt(room.players.size));
+      const hostScale = room.settings?.goldMultiplier || 1.0;
+      const goldGain = Math.floor(40 * gs.goldMultiplier * hostScale / playerScale);
+      
       gs.teamXP += 10;
       room.players.forEach(p => {
         if (p.alive) {
@@ -662,6 +675,10 @@ function updateProjectiles(room) {
       const m = gs.mothership;
       const anyPlayerAlive = Array.from(room.players.values()).some(p => p.alive);
       
+      const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.15;
+      const hostScale = room.settings?.damageMultiplier || 1.0;
+      let damage = (b.damage || 1) * playerScale * hostScale;
+      
       if (dist(b, m) < m.radius + 10) {
         if (anyPlayerAlive) {
           // Invulnerable!
@@ -669,7 +686,6 @@ function updateProjectiles(room) {
           return;
         }
         
-        let damage = b.damage || 1;
         if (m.shield > 0) {
           m.shield -= damage;
           if (m.shield < 0) {
@@ -691,7 +707,6 @@ function updateProjectiles(room) {
              return;
           }
           
-          let damage = b.damage || 1;
           if (p.shield > 0) {
             p.shield -= damage;
             if (p.shield < 0) {
