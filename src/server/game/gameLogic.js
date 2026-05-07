@@ -64,11 +64,16 @@ function updatePlayer(p, room) {
   p.x = clamp(p.x, p.radius, GAME_WIDTH - p.radius);
   p.y = clamp(p.y, p.radius, GAME_HEIGHT - p.radius);
   
-  // Trackpad aiming with Arrow Keys
-  if (p.keys.ArrowLeft) {
-    p.angle -= 0.1;
-  } else if (p.keys.ArrowRight) {
-    p.angle += 0.1;
+  // Aiming with Arrow Keys or Mouse
+  if (p.keys.ArrowUp || p.keys.ArrowDown || p.keys.ArrowLeft || p.keys.ArrowRight) {
+    let adx = 0, ady = 0;
+    if (p.keys.ArrowUp) ady -= 1;
+    if (p.keys.ArrowDown) ady += 1;
+    if (p.keys.ArrowLeft) adx -= 1;
+    if (p.keys.ArrowRight) adx += 1;
+    if (adx !== 0 || ady !== 0) {
+      p.angle = Math.atan2(ady, adx);
+    }
   } else if (p.mouseX !== undefined && p.mouseY !== undefined) {
     p.angle = Math.atan2(p.mouseY - p.y, p.mouseX - p.x);
   }
@@ -271,6 +276,30 @@ function updateMothership(room) {
   }
   
   m.ringAngle += 0.01;
+  
+  // Orbital Strike Logic
+  if (gs.orbitalStrikeUnlocked && gs.currentPhase === 'COMBAT' && gs.enemies.length > 0) {
+    if (!m.orbitalCooldown) m.orbitalCooldown = 0;
+    if (m.orbitalCooldown <= 0) {
+      let target = gs.enemies.find(e => e.isBoss);
+      if (!target) target = gs.enemies.reduce((prev, current) => (prev.hull > current.hull) ? prev : current);
+      
+      const a = angle(m, target);
+      const { spawnProjectile } = require('./entityFactory');
+      const proj = spawnProjectile(m.x, m.y, a, true, 20);
+      proj.damage = 1000;
+      proj.bulletSize = 8;
+      proj.type = 'orbital';
+      proj.aoe = 300;
+      proj.homing = 0.8;
+      proj.color = '#ff00ff';
+      room.gameState.projectiles.push(proj);
+      
+      m.orbitalCooldown = 300; // 10 seconds
+    } else {
+      m.orbitalCooldown--;
+    }
+  }
   
   // Last Stand / Auto-defense
   if (gs.currentPhase === 'COMBAT') {
@@ -594,6 +623,13 @@ function updateProjectiles(room) {
       for (let j = gs.enemies.length - 1; j >= 0; j--) {
         const e = gs.enemies[j];
         const hitRadius = (b.bulletSize || 1) * 5;
+        
+        // OPTIMIZATION: Fast AABB check before expensive dist()
+        if (Math.abs(b.x - e.x) > e.radius + hitRadius + 5 || 
+            Math.abs(b.y - e.y) > e.radius + hitRadius + 5) {
+            continue;
+        }
+        
         if (dist(b, e) < e.radius + hitRadius) {
           let damage = b.damage || 1;
           
@@ -615,6 +651,9 @@ function updateProjectiles(room) {
           if (b.aoe > 0) {
             gs.enemies.forEach(other => {
               if (other === e) return;
+              // OPTIMIZATION
+              if (Math.abs(e.x - other.x) > b.aoe + 5 || Math.abs(e.y - other.y) > b.aoe + 5) return;
+              
               if (dist(e, other) < b.aoe) {
                 other.hull -= damage * 0.5;
                 other.lastHitBy = b.ownerId;
@@ -623,6 +662,23 @@ function updateProjectiles(room) {
             });
             // Mark for explosion effect on client
             b.exploded = true;
+          }
+          
+          // Chain Lightning Logic
+          if (owner && owner.chainLightning && !b.hasChained) {
+            const nextTarget = gs.enemies.find(ne => ne !== e && dist(ne, e) < 400);
+            if (nextTarget) {
+              const { spawnProjectile } = require('./entityFactory');
+              const a = angle(e, nextTarget);
+              const chain = spawnProjectile(e.x, e.y, a, true, 25);
+              chain.damage = damage * 0.75;
+              chain.hasChained = true;
+              chain.type = 'lightning';
+              chain.color = '#00ffff';
+              chain.bulletSize = 2;
+              chain.ownerId = owner.id;
+              gs.projectiles.push(chain);
+            }
           }
           
           // Life steal
@@ -635,10 +691,15 @@ function updateProjectiles(room) {
           // Explosive rounds
           if (b.explosive > 0) {
             gs.enemies.forEach(other => {
-              if (other !== e && dist(b, other) < 50) {
+              if (other === e) return;
+              // OPTIMIZATION
+              if (Math.abs(b.x - other.x) > 55 || Math.abs(b.y - other.y) > 55) return;
+              
+              if (dist(b, other) < 50) {
                 other.hull -= damage * b.explosive;
               }
             });
+            b.exploded = true;
           }
           
           if (b.pierce > 0) {
@@ -649,7 +710,14 @@ function updateProjectiles(room) {
               b.vx *= 0.5; b.vy *= 0.5; 
             }
           } else {
-            gs.projectiles.splice(i, 1);
+            if (b.exploded && b.life > 3) {
+              b.life = 3;
+              b.damage = 0;
+              b.vx = 0;
+              b.vy = 0;
+            } else {
+              gs.projectiles.splice(i, 1);
+            }
           }
           break;
         }
@@ -798,34 +866,7 @@ function updateDrones(room) {
     }
   });
 }
-
-function updateMothership(room) {
-  const m = room.gameState.mothership;
-  const gs = room.gameState;
-
-  // Orbital Strike Logic
-  if (gs.orbitalStrikeUnlocked) {
-    if (!m.orbitalCooldown) m.orbitalCooldown = 0;
-    m.orbitalCooldown--;
-    if (m.orbitalCooldown <= 0) {
-      m.orbitalCooldown = 180; // Every 3 seconds
-      // Spawn orbital blast at random enemy location
-      const targets = [...gs.enemies, ...gs.asteroids];
-      if (targets.length > 0) {
-        const target = targets[Math.floor(Math.random() * targets.length)];
-        const { spawnProjectile } = require('./entityFactory');
-        const b = spawnProjectile(target.x, target.y, 0, true, 0);
-        b.type = 'orbital';
-        b.life = 20;
-        b.damage = 100;
-        b.radius = 150;
-        b.exploded = true;
-        gs.projectiles.push(b);
-      }
-    }
-  }
-}
-
+// (Duplicate updateMothership removed)
 function updatePickups(room) {
   const gs = room.gameState;
   
