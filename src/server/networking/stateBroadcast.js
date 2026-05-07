@@ -18,6 +18,7 @@ function buildStateSnapshot(room) {
       radius: p.radius,
       powerups: p.powerups,
       upgradeReady: p.upgradeReady,
+      merchantReady: p.merchantReady,
       gold: p.gold,
       stats: p.stats,
       upgradeLevels: gs.playerUpgrades[p.id] || {}
