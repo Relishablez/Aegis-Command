@@ -1847,3 +1847,94 @@ function handleSuperUpgradeMenu(msg) {
         optionsContainer.appendChild(div);
     });
 }
+
+// ─── Live Stats & Leaderboard ───────────────────────────────────────────────
+
+let _lbSortField = 'waves';
+
+function pollLiveStats() {
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+            const solo  = document.getElementById('statsSolo');
+            const coop  = document.getElementById('statsCoop');
+            const total = document.getElementById('statsTotal');
+            if (solo)  solo.textContent  = data.soloPlayers  || 0;
+            if (coop)  coop.textContent  = data.coopPlayers  || 0;
+            if (total) total.textContent = data.totalPlayers || 0;
+        })
+        .catch(() => {}); // silently ignore when offline
+}
+
+// Poll every 5 seconds while on the lobby screen
+setInterval(() => {
+    const lobby = document.getElementById('lobby');
+    if (lobby && !lobby.classList.contains('hidden')) {
+        pollLiveStats();
+    }
+}, 5000);
+pollLiveStats(); // initial call
+
+function showLeaderboard() {
+    document.getElementById('leaderboardModal').classList.remove('hidden');
+    loadLeaderboard(_lbSortField);
+}
+
+function hideLeaderboard() {
+    document.getElementById('leaderboardModal').classList.add('hidden');
+}
+
+function loadLeaderboard(sortField) {
+    _lbSortField = sortField || 'waves';
+    
+    // Highlight active sort button
+    ['waves','kills','time'].forEach(f => {
+        const btn = document.getElementById('lb-sort-' + f);
+        if (btn) btn.style.borderColor = f === _lbSortField ? '#f1c40f' : '';
+    });
+    
+    fetch('/api/leaderboard')
+        .then(r => r.json())
+        .then(entries => {
+            // Sort entries
+            entries.sort((a, b) => {
+                if (_lbSortField === 'waves') return b.waves - a.waves;
+                if (_lbSortField === 'kills') return b.kills - a.kills;
+                if (_lbSortField === 'time')  return b.timeSeconds - a.timeSeconds;
+                return 0;
+            });
+            
+            const tbody = document.getElementById('leaderboardBody');
+            if (!entries.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#7f8c8d;padding:30px;">No entries yet. Complete a run to appear here!</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = entries.map((e, i) => {
+                const mins = Math.floor(e.timeSeconds / 60).toString().padStart(2,'0');
+                const secs = (e.timeSeconds % 60).toString().padStart(2,'0');
+                const rowBg = i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+                const goldColor = i === 0 ? '#f1c40f' : i === 1 ? '#bdc3c7' : i === 2 ? '#e67e22' : '#7f8c8d';
+                const resultBadge = e.victory
+                    ? '<span style="color:#2ecc71;font-weight:bold;">✓ WIN</span>'
+                    : '<span style="color:#e74c3c;">✗ FAIL</span>';
+                const modeBadge = e.isCoop
+                    ? `<span style="color:#3498db;font-size:11px;">CO-OP ${e.playerCount}P</span>`
+                    : '<span style="color:#95a5a6;font-size:11px;">SOLO</span>';
+                return `
+                    <tr style="background:${rowBg}; border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <td style="padding:10px 6px; color:${goldColor}; font-weight:bold;">${i+1}</td>
+                        <td style="padding:10px 6px; color:#ecf0f1;">${e.names || 'Unknown'}</td>
+                        <td style="padding:10px 6px; text-align:center;">${modeBadge}</td>
+                        <td style="padding:10px 6px; text-align:center; color:#2ecc71; font-weight:bold;">${e.waves}</td>
+                        <td style="padding:10px 6px; text-align:center; color:#e74c3c;">${e.kills}</td>
+                        <td style="padding:10px 6px; text-align:center; color:#bdc3c7; font-family:monospace;">${mins}:${secs}</td>
+                        <td style="padding:10px 6px; text-align:center;">${resultBadge}</td>
+                    </tr>`;
+            }).join('');
+        })
+        .catch(() => {
+            document.getElementById('leaderboardBody').innerHTML =
+                '<tr><td colspan="7" style="text-align:center;color:#e74c3c;padding:20px;">Failed to load leaderboard.</td></tr>';
+        });
+}
