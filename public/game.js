@@ -763,17 +763,22 @@ function drawGame() {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
         
-        if (bullet.friendly) {
-            ctx.fillStyle = '#f39c12';
-            ctx.shadowBlur = 5;
-            ctx.shadowColor = '#f39c12';
-        } else {
-            ctx.fillStyle = '#e74c3c';
-            ctx.shadowBlur = 5;
-            ctx.shadowColor = '#e74c3c';
-        }
-        
         const size = 3 * (bullet.bulletSize || 1);
+        
+        // Optimization: Skip shadows for regular small bullets to save CPU/GPU
+        if (size > 5 || bullet.type === 'laser' || bullet.type === 'homing_missile') {
+            if (bullet.friendly) {
+                ctx.fillStyle = '#f39c12';
+                ctx.shadowColor = '#f39c12';
+            } else {
+                ctx.fillStyle = '#e74c3c';
+                ctx.shadowColor = '#e74c3c';
+            }
+            ctx.shadowBlur = 5;
+        } else {
+            ctx.fillStyle = bullet.friendly ? '#f39c12' : '#e74c3c';
+            ctx.shadowBlur = 0;
+        }
         
         if (bullet.angle !== undefined) {
             ctx.rotate(bullet.angle);
@@ -869,12 +874,28 @@ function drawGame() {
         
         // Render explosion if marked
         if (bullet.exploded) {
-            ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#f39c12';
+            
+            // Outer blast
+            ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
             ctx.beginPath();
-            ctx.arc(0, 0, 50, 0, Math.PI * 2);
+            ctx.arc(0, 0, 60, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#e67e22';
-            ctx.stroke();
+            
+            // Inner core
+            ctx.fillStyle = 'rgba(241, 196, 15, 0.9)'; // Bright yellow
+            ctx.beginPath();
+            ctx.arc(0, 0, 30, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // White flash
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 15, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0; // Reset
         }
         
         ctx.restore();
@@ -1101,7 +1122,7 @@ function updateUI() {
         const jumpPanel = document.getElementById('jumpPanel') || createJumpPanel();
         const distToMothership = Math.hypot(gameState.m.x - player.x, gameState.m.y - player.y);
         
-        if (gameState.w && gameState.w.encounterType === 'merchant' && distToMothership < 150) {
+        if (gameState.currentPhase === 'COMBAT' && gameState.w && gameState.w.encounterType === 'merchant' && distToMothership < 150) {
             jumpPanel.classList.remove('hidden');
             updateJumpUI();
         } else {
@@ -1606,7 +1627,41 @@ function handleAnnouncement(msg) {
 function handleGameOver(msg) {
     gameOverScreen.classList.remove('hidden');
     document.getElementById('gameOverTitle').textContent = msg.title;
-    document.getElementById('gameOverStats').textContent = msg.stats;
+    
+    // Create tabs for PvE and PvP
+    let statsHtml = `<p>${msg.stats}</p>`;
+    
+    if (msg.pveStats || msg.pvpScores) {
+        statsHtml += `<div style="display: flex; gap: 10px; margin: 15px 0; justify-content: center;">
+            <button onclick="document.getElementById('pveStatsDiv').style.display='block'; document.getElementById('pvpStatsDiv').style.display='none';" style="padding: 10px; background: #3498db; color: white; border: none; cursor: pointer;">PvE Stats</button>
+            <button onclick="document.getElementById('pveStatsDiv').style.display='none'; document.getElementById('pvpStatsDiv').style.display='block';" style="padding: 10px; background: #e74c3c; color: white; border: none; cursor: pointer;">PvP Stats</button>
+        </div>`;
+        
+        // PvE
+        statsHtml += `<div id="pveStatsDiv" style="display: block; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 5px;">
+            <h3 style="margin: 0 0 10px 0; color: #3498db;">Co-op Performance</h3>`;
+        if (msg.pveStats) {
+            msg.pveStats.forEach(s => {
+                statsHtml += `<div style="margin-bottom: 5px;"><strong>${s.name}</strong>: ${s.kills} Kills | ${s.damage} Damage</div>`;
+            });
+        }
+        statsHtml += `</div>`;
+        
+        // PvP
+        statsHtml += `<div id="pvpStatsDiv" style="display: none; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 5px;">
+            <h3 style="margin: 0 0 10px 0; color: #e74c3c;">PvP Showdown Results</h3>`;
+        if (msg.pvpScores && Object.keys(msg.pvpScores).length > 0) {
+            Object.keys(msg.pvpScores).forEach(id => {
+                const name = msg.pveStats?.find(p => p.id === id)?.name || `Player ${id.slice(-4)}`;
+                statsHtml += `<div style="margin-bottom: 5px;"><strong>${name}</strong>: ${msg.pvpScores[id]} Wins</div>`;
+            });
+        } else {
+            statsHtml += `<div>No PvP data recorded.</div>`;
+        }
+        statsHtml += `</div>`;
+    }
+    
+    document.getElementById('gameOverStats').innerHTML = statsHtml;
 }
 
 function handleError(msg) {
