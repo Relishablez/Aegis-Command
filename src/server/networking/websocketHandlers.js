@@ -1,5 +1,6 @@
 const UPGRADES = require('../config/upgrades');
 const { generateUpgradeOptions } = require('../game/upgradeSystem');
+const { verifyPassword } = require('../utils/helpers');
 
 function setupWebSocketHandlers(wss, roomManager) {
   wss.on('connection', (ws, req) => {
