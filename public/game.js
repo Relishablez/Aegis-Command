@@ -152,7 +152,7 @@ function handleMessage(msg) {
             handlePlayerLeft(msg);
             break;
         case 'game_started':
-            onGameStarted();
+            handleGameStarted();
             break;
         case 'state':
             handleState(msg);
@@ -211,9 +211,6 @@ function handleMessage(msg) {
             break;
         case 'endgame_vote_update':
             handleEndgameVoteUpdate(msg);
-            break;
-        case 'game_started':
-            document.getElementById('endgameVoteModal').classList.add('hidden');
             break;
         case 'gameover':
             handleGameOver(msg);
