@@ -211,7 +211,13 @@ function triggerNavigation(room) {
   const gs = room.gameState;
   if (gs.currentPhase === 'NAVIGATION') return;
   
-  console.log(`[NAV] Triggering navigation phase for room ${room.id}`);
+  try {
+      console.log(`[NAV] Triggering navigation phase for room ${room.id}`);
+  } catch (err) {
+      console.error(`Error in gameTick for room ${room.code}:`, err);
+      if (err.stack) console.error(err.stack);
+  }
+  
   gs.currentPhase = 'NAVIGATION';
   gs.navigationPhase = true;
   gs.nodeVotes = {}; 
@@ -431,8 +437,10 @@ function startNextWave(room) {
 
 function startSelectedNode(room, nodeType) {
   const gs = room.gameState;
-  gs.encounterType = nodeType;
+  gs.currentPhase = 'COMBAT'; // Ensure we are in combat phase
+  gs.waveTimer = 0; // RESET TIMER FOR NEW WAVE
   gs.spawnTimer = 0;
+  gs.encounterType = nodeType;
   
   const defaultDuration = WAVE_DURATIONS[nodeType] || 1800;
   const customDuration = room.settings && room.settings.waveDuration ? room.settings.waveDuration * 30 : defaultDuration;
