@@ -158,7 +158,6 @@ function spawnProjectile(x, y, angle, friendly, speed = PROJECTILE.SPEED) {
 }
 
 function spawnPickup(x, y, type = 'gold') {
-  // type can be 'gold', 'health', 'rapidFire', 'invincible', 'doubleGold'
   return {
     id: nextEntityId++,
     x, y,
