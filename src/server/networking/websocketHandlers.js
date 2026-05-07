@@ -33,7 +33,8 @@ function setupWebSocketHandlers(wss, roomManager) {
               players: [{
                 id: playerId,
                 name: sanitizedName,
-                color: room.players.get(playerId).color
+                color: room.players.get(playerId).color,
+                isDev: room.players.get(playerId).isDev || false
               }]
             }));
 
@@ -96,7 +97,8 @@ function setupWebSocketHandlers(wss, roomManager) {
               players: Array.from(room.players.values()).map(p => ({
                 id: p.id,
                 name: p.name || `Player ${p.id.slice(-4)}`,
-                color: p.color
+                color: p.color,
+                isDev: p.isDev || false
               }))
             }));
 
@@ -106,7 +108,8 @@ function setupWebSocketHandlers(wss, roomManager) {
               player: {
                 id: playerId,
                 name: sanitizedName,
-                color: room.players.get(playerId).color
+                color: room.players.get(playerId).color,
+                isDev: room.players.get(playerId).isDev || false
               }
             });
 
