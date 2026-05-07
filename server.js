@@ -99,6 +99,7 @@ function gameTick() {
       }
     } catch (err) {
       console.error(`Error in gameTick for room ${room.code}:`, err);
+      if (err.stack) console.error(err.stack);
     }
   }
 }
