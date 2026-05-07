@@ -54,6 +54,8 @@ function buildStateSnapshot(room) {
     b: gs.projectiles.map(b => ({
       x: b.x,
       y: b.y,
+      vx: b.vx || 0,
+      vy: b.vy || 0,
       angle: b.angle,
       friendly: b.friendly,
       damage: b.damage,
@@ -91,7 +93,8 @@ function buildStateSnapshot(room) {
     currentPhase: gs.currentPhase,
     waitingForUpgrade: gs.waitingForUpgrade,
     navigationPhase: gs.navigationPhase,
-    navigationOptions: gs.navigationOptions
+    navigationOptions: gs.navigationOptions,
+    t: Date.now()
   };
 }
 
