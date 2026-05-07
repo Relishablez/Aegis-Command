@@ -478,6 +478,15 @@ class RoomManager {
     const { recalculatePlayerStats } = require('../game/upgradeSystem');
 
     switch (action) {
+      case 'add_xp':
+        gs.teamXP += (data.amount || 100);
+        if (gs.teamXP >= gs.teamXPNext) {
+            gs.teamLevel++;
+            gs.teamXP -= gs.teamXPNext;
+            gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
+            gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
+        }
+        break;
       case 'add_gold':
         player.gold += (data.amount || 1000);
         break;
@@ -487,22 +496,28 @@ class RoomManager {
         if (data.stat === 'speed') player.speed = (player.speed || 4) + (data.value || 1);
         break;
       case 'apply_upgrade':
-        const upgradeId = data.upgradeId;
-        const upgradeDef = UPGRADES.find(u => u.id === upgradeId);
-        if (!gs.playerUpgrades[playerId]) gs.playerUpgrades[playerId] = {};
-        const currentLevel = gs.playerUpgrades[playerId][upgradeId] || 0;
-        
-        // Check for max level
-        if (upgradeDef && currentLevel >= upgradeDef.max) {
-          console.log(`[DEV] Upgrade ${upgradeId} already at max level (${upgradeDef.max})`);
-          return;
-        }
-        
-        gs.playerUpgrades[playerId][upgradeId] = currentLevel + 1;
-        recalculatePlayerStats(player, gs);
+        const { applyUpgrade } = require('../game/upgradeSystem');
+        applyUpgrade(room, playerId, data.upgradeId, true);
         break;
       case 'mothership_heal':
         gs.mothership.hull = gs.mothership.maxHull;
+        break;
+      case 'god_mode':
+        player.godMode = !player.godMode;
+        gs.mothership.godMode = !gs.mothership.godMode;
+        if (room.broadcastToRoom) {
+            room.broadcastToRoom({ type: 'announcement', text: 'DEV ACTION', sub: `GOD MODE: ${player.godMode ? 'ON' : 'OFF'}` });
+        }
+        break;
+      case 'skip_wave':
+        const { endWave } = require('../game/waveManager');
+        if (gs.currentPhase === 'COMBAT') {
+            gs.waveTimer = gs.waveDuration;
+            endWave(room, false);
+            if (room.broadcastToRoom) {
+                room.broadcastToRoom({ type: 'announcement', text: 'DEV ACTION', sub: 'WAVE SKIPPED' });
+            }
+        }
         break;
     }
 
