@@ -84,13 +84,17 @@ function spawnEnemy(room) {
   const diff = getDifficulty(room.gameState.wave);
   const isDiamond = Math.random() < 0.3;
   
+  const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.15; // +15% health per player
+  const hostScale = room.settings?.damageMultiplier || 1.0;
+  const totalScale = playerScale * hostScale;
+  
   return {
     x, y,
     radius: isDiamond ? ENEMY.ELITE_RADIUS : ENEMY.FIGHTER_RADIUS,
     speed: diff.enemySpeed * (0.8 + Math.random() * 0.4),
     angle: 0,
-    hull: diff.enemyHealth * (isDiamond ? 2 : 1),
-    maxHull: diff.enemyHealth * (isDiamond ? 2 : 1),
+    hull: diff.enemyHealth * totalScale * (isDiamond ? 2 : 1),
+    maxHull: diff.enemyHealth * totalScale * (isDiamond ? 2 : 1),
     diamond: isDiamond,
     fireCooldown: 0
   };
