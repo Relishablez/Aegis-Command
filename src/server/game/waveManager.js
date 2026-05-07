@@ -106,8 +106,47 @@ function updateWave(room) {
   }
   
   // Final Boss victory condition (Wave 15)
-  if (gs.encounterType === 'boss' && gs.wave === 15 && gs.enemies.length === 0 && gs.waveTimer > 300) {
-    gameOver(room, true);
+  if (gs.encounterType === 'boss' && gs.wave >= 15 && gs.enemies.length === 0 && gs.waveTimer > 300) {
+    if (!room.isSinglePlayer && room.players.size > 1 && !gs.offeredPvp) {
+      gs.offeredPvp = true;
+      gs.currentPhase = 'NAVIGATION';
+      gs.navigationPhase = true;
+      gs.nodeVotes = {};
+      gs.navigationOptions = [
+        {
+          id: 'node_finish',
+          type: 'finish',
+          name: 'FINISH MISSION',
+          description: 'Return to base with honors.',
+          icon: '🏆',
+          votes: 0,
+          locked: false
+        },
+        {
+          id: 'node_pvp',
+          type: 'pvp',
+          name: 'PVP SHOWDOWN',
+          description: 'Settle the score. Last man standing.',
+          icon: '⚔️',
+          votes: 0,
+          locked: false
+        }
+      ];
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({
+          type: 'navigation_options',
+          options: gs.navigationOptions,
+          votes: {}
+        });
+        room.broadcastToRoom({
+          type: 'announcement',
+          text: 'MISSION ACCOMPLISHED',
+          sub: 'What is your next move?'
+        });
+      }
+    } else if (!gs.offeredPvp) {
+      gameOver(room, true);
+    }
   }
 }
 
@@ -265,6 +304,12 @@ function selectNode(room, nodeType) {
   const gs = room.gameState;
   gs.navigationPhase = false;
   gs.navigationOptions = null;
+  
+  if (nodeType === 'finish') {
+    gameOver(room, true);
+    return;
+  }
+  
   const validNodes = ['defense', 'escort', 'salvage', 'merchant', 'pvp', 'boss'];
   if (!validNodes.includes(nodeType)) {
     console.error(`[NAV] Invalid node selection: ${nodeType}. Defaulting to defense.`);
@@ -363,7 +408,7 @@ function startSelectedNode(room, nodeType) {
     gs.mothership.y = GAME_HEIGHT / 2;
   }
   
-  if (nodeType === 'merchant') {
+    if (nodeType === 'merchant') {
     const { spawnMerchant } = require('./entityFactory');
     // Pool of powerful upgrades
     const upgradesPool = [
@@ -371,24 +416,34 @@ function startSelectedNode(room, nodeType) {
       { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts', cost: 600 },
       { id: 'hyper_drives', name: 'Hyper Drives', desc: '300% Move Speed for the entire fleet', cost: 500 },
       { id: 'homing_missiles', name: 'Homing Missiles', desc: 'All projectiles track enemies with high agility', cost: 450 },
-      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: 550 }
+      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: 550 },
+      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for you', cost: 400 },
+      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for you', cost: 500 },
+      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for you', cost: 350 },
+      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Weapons arc chain lightning on hit', cost: 600 }
     ];
-    // Shuffle and take first three
+    // Shuffle and take first 5
     const shuffled = upgradesPool.sort(() => Math.random() - 0.5);
     const positions = [
-      { x: GAME_WIDTH * 0.25, y: GAME_HEIGHT * 0.4 },
-      { x: GAME_WIDTH * 0.5,  y: GAME_HEIGHT * 0.2 },
-      { x: GAME_WIDTH * 0.75, y: GAME_HEIGHT * 0.4 }
+      { x: GAME_WIDTH * 0.2, y: GAME_HEIGHT * 0.3 },
+      { x: GAME_WIDTH * 0.5, y: GAME_HEIGHT * 0.2 },
+      { x: GAME_WIDTH * 0.8, y: GAME_HEIGHT * 0.3 },
+      { x: GAME_WIDTH * 0.35, y: GAME_HEIGHT * 0.6 },
+      { x: GAME_WIDTH * 0.65, y: GAME_HEIGHT * 0.6 }
     ];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       const merch = spawnMerchant(positions[i].x, positions[i].y, shuffled[i]);
       gs.merchants.push(merch);
     }
     gs.waveDuration = 1800; // 30 seconds merchant phase
   } else if (nodeType === 'pvp') {
-    gs.waveDuration = 1800; // 30 seconds PVP
-    gs.pvpScores = {};
-    room.players.forEach((p, id) => gs.pvpScores[id] = 0);
+    gs.waveDuration = 3600; // 60 seconds
+    gs.pvpScores = gs.pvpScores || {};
+    room.players.forEach((p, id) => {
+      gs.pvpScores[id] = gs.pvpScores[id] || 0;
+      p.maxHull = Math.max(p.maxHull || 100, 300);
+      p.hull = p.maxHull;
+    });
   } else if (nodeType !== 'salvage') {
     const { spawnEnemy } = require('./entityFactory');
     const isBossWave = gs.wave === 5 || gs.wave === 10 || gs.wave === 15;
@@ -447,11 +502,18 @@ function gameOver(room, victory) {
     let totalKills = 0;
     let totalGold = 0;
     const playerNames = [];
+    const pveStats = [];
     
-    room.players.forEach(p => {
+    room.players.forEach((p, id) => {
       totalGold += p.gold;
       totalKills += (p.stats?.kills || 0);
       playerNames.push(p.name || 'Pilot');
+      pveStats.push({
+        id: id,
+        name: p.name || 'Pilot',
+        kills: p.stats?.kills || 0,
+        damage: Math.floor(p.stats?.damageDealt || 0)
+      });
     });
     
     const timeElapsed = Math.floor((Date.now() - (room.startTime || Date.now())) / 1000);
@@ -459,7 +521,9 @@ function gameOver(room, victory) {
     room.broadcastToRoom({
       type: 'gameover',
       title: victory ? 'MISSION COMPLETE' : 'MISSION FAILED',
-      stats: `Survived ${gs.wave} nodes • ${totalGold} GOLD earned`
+      stats: `Survived ${gs.wave} nodes • ${totalGold} GOLD earned`,
+      pveStats: pveStats,
+      pvpScores: gs.pvpScores || null
     });
     
     // Record to global leaderboard
