@@ -191,6 +191,10 @@ function updatePlayer(p, room) {
           projectile.isMissile = true;
         }
         
+        if (projectile.type === 'laser') {
+          projectile.isLaser = true;
+        }
+        
         room.gameState.projectiles.push(projectile);
       }
     }
