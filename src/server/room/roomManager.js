@@ -310,6 +310,19 @@ class RoomManager {
         }
       }
       if (upgrade.id === 'homing_missiles') gs.teamHomingBoost = true;
+      if (upgrade.id === 'quantum_shield') {
+         gs.mothership.shieldMax = (gs.mothership.shieldMax || 0) + 1000;
+         gs.mothership.shield = gs.mothership.shieldMax;
+      }
+      
+      // Player specific
+      if (upgrade.id === 'double_projectiles') player.merchantMultiShot = (player.merchantMultiShot || 1) * 2;
+      if (upgrade.id === 'double_damage') player.merchantDamage = (player.merchantDamage || 1) * 2;
+      if (upgrade.id === 'rate_of_fire') player.merchantFireRate = (player.merchantFireRate || 1) * 0.5;
+      if (upgrade.id === 'chain_lightning') player.chainLightning = true;
+      
+      const { recalculatePlayerStats } = require('../game/upgradeSystem');
+      recalculatePlayerStats(player, gs);
       
       if (gs.mothership.hull > gs.mothership.maxHull) gs.mothership.hull = gs.mothership.maxHull;
       
@@ -370,12 +383,8 @@ class RoomManager {
     // Apply super upgrade
     if (upgradeId === 'super_fire_rate') {
       player.superFireRateActive = true;
-      player.fireRate *= 0.5;
-      player.damage *= 2;
     } else if (upgradeId === 'super_homing') {
       player.superHomingActive = true;
-      player.homing = 100;
-      player.explosive = (player.explosive || 0) + 1;
     } else if (upgradeId === 'super_drones') {
       const droneCount = gs.drones.filter(d => d.ownerId === playerId).length;
       const { spawnDrone } = require('../game/entityFactory');
@@ -385,9 +394,10 @@ class RoomManager {
       gs.droneFireRateBonus += 2;
     } else if (upgradeId === 'super_weapons') {
       player.superWeaponsActive = true;
-      player.multiShot *= 3;
-      player.bulletSize *= 3;
     }
+    
+    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+    recalculatePlayerStats(player, gs);
 
     player.superUpgradeSelected = true;
 
