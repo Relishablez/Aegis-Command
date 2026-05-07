@@ -174,6 +174,15 @@ function handleMessage(msg) {
         case 'announcement':
             handleAnnouncement(msg);
             break;
+        case 'endgame_vote_start':
+            handleEndgameVoteStart(msg);
+            break;
+        case 'endgame_vote_update':
+            handleEndgameVoteUpdate(msg);
+            break;
+        case 'game_started':
+            document.getElementById('endgameVoteModal').classList.add('hidden');
+            break;
         case 'gameover':
             handleGameOver(msg);
             break;
@@ -605,6 +614,19 @@ function drawGame() {
         ctx.save();
         ctx.translate(gameState.m.x, gameState.m.y);
         
+        // Auto-Turret Range Indicator
+        if (gameState.m.autoTurret > 0) {
+            const range = gameState.m.turretRange || 500;
+            const pulse = (Math.sin(Date.now() / 500) + 1) / 2;
+            ctx.strokeStyle = `rgba(52, 152, 219, ${0.1 + pulse * 0.1})`;
+            ctx.setLineDash([10, 10]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, range, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset
+        }
+        
         // Shield
         if (gameState.m.shield > 0) {
             ctx.strokeStyle = `rgba(155, 89, 182, ${gameState.m.shield / gameState.m.shieldMax})`;
@@ -853,6 +875,37 @@ function drawGame() {
             ctx.lineTo(length * 0.2, width * 0.3);
             ctx.lineTo(length * 0.2, -width * 0.3);
             ctx.fill();
+            
+            ctx.restore();
+        } else if (bullet.type === 'lightning') {
+            const length = 40;
+            ctx.save();
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 3;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00ffff';
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            
+            // Draw jagged line
+            let curX = 0;
+            let curY = 0;
+            const segments = 4;
+            const step = length / segments;
+            
+            for (let i = 1; i <= segments; i++) {
+                curX -= step;
+                curY = (Math.random() - 0.5) * 15;
+                ctx.lineTo(curX, curY);
+            }
+            ctx.stroke();
+            
+            // Core white line
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1;
+            ctx.shadowBlur = 0;
+            ctx.stroke();
             
             ctx.restore();
         } else if (bullet.type === 'orbital') {
@@ -1122,9 +1175,13 @@ function updateUI() {
         const jumpPanel = document.getElementById('jumpPanel') || createJumpPanel();
         const distToMothership = Math.hypot(gameState.m.x - player.x, gameState.m.y - player.y);
         
-        if (gameState.currentPhase === 'COMBAT' && gameState.w && gameState.w.encounterType === 'merchant' && distToMothership < 150) {
-            jumpPanel.classList.remove('hidden');
+        if (gameState.w && gameState.w.encounterType === 'merchant') {
             updateJumpUI();
+            if (gameState.currentPhase === 'COMBAT' && distToMothership < 150) {
+                jumpPanel.classList.remove('hidden');
+            } else {
+                jumpPanel.classList.add('hidden');
+            }
         } else {
             jumpPanel.classList.add('hidden');
         }
@@ -1160,6 +1217,16 @@ function updateJumpUI() {
         readyBtn.textContent = isReady ? 'WAITING FOR TEAM...' : 'SIGNAL READY';
         readyBtn.className = `btn ${isReady ? 'btn-secondary' : 'btn-primary'}`;
         readyBtn.onclick = () => {
+            ws.send(JSON.stringify({ type: 'merchant_ready' }));
+        };
+    }
+    
+    // Also update the static button in the merchant panel
+    const merchReadyBtn = document.getElementById('merchReadyBtn');
+    if (merchReadyBtn) {
+        merchReadyBtn.textContent = isReady ? 'READY!' : 'READY TO JUMP';
+        merchReadyBtn.className = `btn ${isReady ? 'btn-secondary' : 'btn-primary'}`;
+        merchReadyBtn.onclick = () => {
             ws.send(JSON.stringify({ type: 'merchant_ready' }));
         };
     }
@@ -1820,7 +1887,7 @@ function handleNavigationOptions(msg) {
                 badge.style.padding = '2px 6px';
                 badge.style.borderRadius = '4px';
                 badge.style.border = `1px solid ${player.color || '#3498db'}`;
-                const displayName = (player.name || 'Pilot').split(' ')[0];
+                const displayName = player.name || 'Pilot';
                 badge.textContent = displayName;
                 votersList.appendChild(badge);
             }
@@ -2012,3 +2079,29 @@ function loadLeaderboard(sortField) {
                 '<tr><td colspan="7" style="text-align:center;color:#e74c3c;padding:20px;">Failed to load leaderboard.</td></tr>';
         });
 }
+function handleEndgameVoteStart(msg) {
+    const modal = document.getElementById('endgameVoteModal');
+    modal.classList.remove('hidden');
+    
+    document.getElementById('voteFinishBtn').onclick = () => {
+        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'finish' }));
+    };
+    
+    document.getElementById('votePvpBtn').onclick = () => {
+        ws.send(JSON.stringify({ type: 'vote_endgame', choice: 'pvp' }));
+    };
+}
+
+function handleEndgameVoteUpdate(msg) {
+    const stats = document.getElementById('endgameVoteStats');
+    const voteCount = Object.keys(msg.votes).length;
+    const pvpVotes = Object.values(msg.votes).filter(v => v === 'pvp').length;
+    stats.textContent = `${voteCount} players voted (${pvpVotes} for PvP)`;
+}
+
+// Ensure gameover also hides the endgame modal
+const originalHandleGameOver = handleGameOver;
+handleGameOver = (msg) => {
+    document.getElementById('endgameVoteModal').classList.add('hidden');
+    originalHandleGameOver(msg);
+};
