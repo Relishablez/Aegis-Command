@@ -912,7 +912,38 @@ function drawGame() {
             ctx.shadowBlur = 0;
             ctx.stroke();
             
+            ctx.stroke();
+            
             ctx.restore();
+        } else if (bullet.type === 'laser') {
+            const alpha = bullet.life / (bullet.maxLife || 20);
+            const width = (bullet.width || 10) * alpha;
+            const range = bullet.range || 500;
+            
+            ctx.restore(); // Exit the translated/rotated context to draw relative to p
+            ctx.save();
+            ctx.translate(bullet.x, bullet.y);
+            ctx.rotate(bullet.angle);
+            
+            // Outer glow
+            ctx.strokeStyle = `rgba(52, 152, 219, ${alpha * 0.4})`;
+            ctx.lineWidth = width * 2.5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(range, 0);
+            ctx.stroke();
+            
+            // Core beam
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = width;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(range, 0);
+            ctx.stroke();
+            
+            ctx.restore();
+            return; // Already handled restore and drawing
         } else if (bullet.type === 'orbital') {
             const alpha = bullet.life / 20;
             const radius = bullet.radius || 150;
