@@ -201,6 +201,34 @@ function updatePlayer(p, room) {
     p.fireCooldown = effectiveFireRate;
   }
   
+  // Melee Spikes (Ramming Logic)
+  const ramSpikesLevel = gs.playerUpgrades[p.id]?.ram_spikes || 0;
+  if (p.alive && ramSpikesLevel > 0) {
+    if (!p.ramCooldowns) p.ramCooldowns = {};
+    const currentVel = Math.hypot(dx, dy) * (p.speed + (p.dashDuration > 0 ? p.speed * 2 : 0));
+    
+    gs.enemies.forEach(e => {
+      // Cooldown check
+      if (p.ramCooldowns[e.id] && p.ramCooldowns[e.id] > 0) {
+        p.ramCooldowns[e.id]--;
+        return;
+      }
+      
+      if (dist(p, e) < p.radius + e.radius + 15) {
+        const damage = ramSpikesLevel * 25 * (1 + currentVel * 1.5);
+        e.hull -= damage;
+        e.lastHitBy = p.id;
+        p.ramCooldowns[e.id] = 20; // 0.33s cooldown at 60Hz
+      }
+    });
+    
+    gs.asteroids.forEach(a => {
+      if (dist(p, a) < p.radius + a.radius + 15) {
+        a.hull -= ramSpikesLevel * 15 * (1 + currentVel * 0.8);
+      }
+    });
+  }
+
   // Track time alive
   p.stats.timeAlive++;
   p.stats.maxWave = Math.max(p.stats.maxWave, room.gameState.wave);
@@ -676,8 +704,24 @@ function updateProjectiles(room) {
             b.exploded = true;
           }
           
+          // Shrapnel logic
+          if (owner && owner.shrapnel > 0 && !b.isShrapnelFragment) {
+            const shardCount = 2 + Math.floor(owner.shrapnel / 2);
+            for (let k = 0; k < shardCount; k++) {
+              const shardAngle = b.angle + (Math.random() - 0.5) * 2;
+              const shard = spawnProjectile(b.x, b.y, shardAngle, true, 8);
+              shard.damage = damage * 0.25;
+              shard.isShrapnelFragment = true;
+              shard.life = 20;
+              shard.ownerId = owner.id;
+              shard.color = '#bdc3c7';
+              shard.bulletSize = 0.6;
+              gs.projectiles.push(shard);
+            }
+          }
+          
           // Chain Lightning Logic (Optimized with AABB)
-          if (owner && owner.chainLightning && !b.hasChained) {
+          if (owner && owner.chainLightning > 0 && !b.hasChained) {
             const nextTarget = gs.enemies.find(ne => {
               if (ne === e) return false;
               if (Math.abs(ne.x - e.x) > 400 || Math.abs(ne.y - e.y) > 400) return false;
@@ -685,7 +729,6 @@ function updateProjectiles(room) {
             });
             
             if (nextTarget) {
-              const { spawnProjectile } = require('./entityFactory');
               const a = angle(e, nextTarget);
               const chain = spawnProjectile(e.x, e.y, a, true, 25);
               chain.damage = damage * 0.75;
