@@ -40,8 +40,10 @@ function setupWebSocketHandlers(wss, roomManager) {
 
             // Set game status
             if (msg.singlePlayer) {
+              const { startSelectedNode } = require('../game/waveManager');
               room.gameState.gameStarted = true;
               room.gameRunning = true;
+              startSelectedNode(room, 'defense');
             } else {
               room.gameState.gameStarted = false; // Wait for host to start
               room.gameRunning = false;
@@ -63,10 +65,11 @@ function setupWebSocketHandlers(wss, roomManager) {
             return;
           }
 
-          if (room.players.size >= 4) {
+          const { MAX_PLAYERS_PER_ROOM } = require('../config/constants');
+          if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
             ws.send(JSON.stringify({
               type: 'error',
-              message: 'Room is full (max 4 players).'
+              message: `Room is full (max ${MAX_PLAYERS_PER_ROOM} players).`
             }));
             return;
           }
@@ -224,7 +227,8 @@ function setupWebSocketHandlers(wss, roomManager) {
         if (msg.type === 'ping') {
           ws.send(JSON.stringify({
             type: 'pong',
-            clientTime: msg.clientTime
+            clientTime: msg.clientTime,
+            serverTime: Date.now()
           }));
           return;
         }
