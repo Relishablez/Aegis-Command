@@ -16,13 +16,19 @@ class RoomManager {
     this.rooms = new Map(); // roomCode -> room object
   }
 
-  createRoom(password = null, isSinglePlayer = false, maxPlayers = MAX_PLAYERS_PER_ROOM) {
+  createRoom(password = null, isSinglePlayer = false, maxPlayers = MAX_PLAYERS_PER_ROOM, settings = null) {
     const code = generateRoomCode();
     
     // Ensure uniqueness
     if (this.rooms.has(code)) {
-      return this.createRoom(password, isSinglePlayer, maxPlayers);
+      return this.createRoom(password, isSinglePlayer, maxPlayers, settings);
     }
+    
+    const roomSettings = settings || {
+      waveDuration: 60,
+      damageMultiplier: 1.0,
+      goldMultiplier: 1.0
+    };
     
     const room = {
       code,
@@ -30,6 +36,7 @@ class RoomManager {
       isPrivate: !!password,
       isSinglePlayer: !!isSinglePlayer,
       maxPlayers: Math.min(Math.max(1, maxPlayers), 8), // clamp between 1 and 8
+      settings: roomSettings,
       players: new Map(),
       ownerId: null,
       gameState: createGameState(),
