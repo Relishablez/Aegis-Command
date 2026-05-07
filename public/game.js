@@ -1,5 +1,5 @@
 // Aegis Command - Multiplayer Client Game Logic
-console.log("[SYSTEM] game.js loaded successfully - v2");
+console.log("[SYSTEM] game.js loaded successfully - v3");
 
 // Game Constants
 const GAME_WIDTH = 1600;
@@ -289,64 +289,87 @@ function getCurrentRenderState() {
     const t = (renderTime - s1.receiveTime) / duration;
     
     // Interpolate positions
-    const interpolated = JSON.parse(JSON.stringify(s1.state));
+    // Shallow copy the state to avoid expensive JSON operations
+    // We only need to interpolate specific values
+    const interpolated = { ...s1.state };
+    
+    // Create new arrays for entities we will modify
+    interpolated.p = s1.state.p ? s1.state.p.map(p => ({ ...p })) : [];
+    interpolated.m = s1.state.m ? { ...s1.state.m } : {};
+    interpolated.e = s1.state.e ? s1.state.e.map(e => ({ ...e })) : [];
+    interpolated.a = s1.state.a ? s1.state.a.map(a => ({ ...a })) : [];
+    interpolated.b = s1.state.b ? s1.state.b.map(b => ({ ...b })) : [];
     
     // Interpolate players
-    if (s2.state.p) {
-        interpolated.p.forEach((p1, idx) => {
-            const p2 = s2.state.p[idx];
-            if (p2 && p1.id === p2.id) {
-                p1.x = lerp(p1.x, p2.x, t);
-                p1.y = lerp(p1.y, p2.y, t);
-                // Angle interpolation (handle wrap-around)
-                let diff = p2.angle - p1.angle;
-                while (diff < -Math.PI) diff += Math.PI * 2;
-                while (diff > Math.PI) diff -= Math.PI * 2;
-                p1.angle = p1.angle + diff * t;
+    if (s1.state.p && s2.state.p) {
+        interpolated.p = s1.state.p.map((p1, idx) => {
+            const p2 = s2.state.p.find(p => p.id === p1.id);
+            if (p2) {
+                return {
+                    ...p1,
+                    x: lerp(p1.x, p2.x, t),
+                    y: lerp(p1.y, p2.y, t),
+                    angle: (() => {
+                        let diff = p2.angle - p1.angle;
+                        while (diff < -Math.PI) diff += Math.PI * 2;
+                        while (diff > Math.PI) diff -= Math.PI * 2;
+                        return p1.angle + diff * t;
+                    })()
+                };
             }
+            return p1;
         });
     }
     
     // Interpolate mothership
     if (s1.state.m && s2.state.m) {
-        interpolated.m.x = lerp(s1.state.m.x, s2.state.m.x, t);
-        interpolated.m.y = lerp(s1.state.m.y, s2.state.m.y, t);
+        interpolated.m = {
+            ...s1.state.m,
+            x: lerp(s1.state.m.x, s2.state.m.x, t),
+            y: lerp(s1.state.m.y, s2.state.m.y, t)
+        };
     }
     
     // Interpolate enemies
     if (s1.state.e && s2.state.e) {
-        interpolated.e.forEach((e1, idx) => {
+        interpolated.e = s1.state.e.map((e1, idx) => {
             const e2 = s2.state.e[idx];
             if (e2 && idx < s2.state.e.length) {
-                e1.x = lerp(e1.x, e2.x, t);
-                e1.y = lerp(e1.y, e2.y, t);
+                return {
+                    ...e1,
+                    x: lerp(e1.x, e2.x, t),
+                    y: lerp(e1.y, e2.y, t)
+                };
             }
+            return e1;
         });
     }
     
     // Interpolate asteroids
     if (s1.state.a && s2.state.a) {
-        interpolated.a.forEach((a1, idx) => {
+        interpolated.a = s1.state.a.map((a1, idx) => {
             const a2 = s2.state.a[idx];
             if (a2 && idx < s2.state.a.length) {
-                a1.x = lerp(a1.x, a2.x, t);
-                a1.y = lerp(a1.y, a2.y, t);
-                a1.rot = lerp(a1.rot, a2.rot, t);
+                return {
+                    ...a1,
+                    x: lerp(a1.x, a2.x, t),
+                    y: lerp(a1.y, a2.y, t),
+                    rot: lerp(a1.rot, a2.rot, t)
+                };
             }
+            return a1;
         });
     }
 
-    // Interpolate projectiles (bullets)
-    if (s1.state.b && s2.state.b) {
-        interpolated.b.forEach((b1, idx) => {
-            const b2 = s2.state.b[idx];
-            // Since bullets are added/removed frequently, we only lerp if we find a likely match
-            // Bullets don't have IDs usually, so we check distance and angle parity
-            if (b2 && Math.abs(b1.angle - b2.angle) < 0.1 && dist(b1, b2) < 50) {
-                b1.x = lerp(b1.x, b2.x, t);
-                b1.y = lerp(b1.y, b2.y, t);
-            }
-        });
+    // Extrapolate projectiles (bullets) for smoother motion
+    // Using authoritative server timestamp (s1.state.t) for consistent speed
+    const extrapolationTime = (Date.now() + serverTimeOffset - s1.state.t) / 1000;
+    if (interpolated.b) {
+        interpolated.b = interpolated.b.map(b => ({
+            ...b,
+            x: b.x + (b.vx || 0) * (extrapolationTime * 60),
+            y: b.y + (b.vy || 0) * (extrapolationTime * 60)
+        }));
     }
     
     return interpolated;
@@ -744,7 +767,7 @@ function drawGame(gs) {
     });
     
     // Draw pickups
-    gameState.c?.forEach(p => {
+    gs.c?.forEach(p => {
         ctx.save();
         ctx.translate(p.x, p.y);
         
@@ -770,8 +793,6 @@ function drawGame(gs) {
         
         ctx.restore();
     });
-    
-    // Draw drones
     gs.d?.forEach(drone => {
         ctx.save();
         ctx.translate(drone.x, drone.y);
@@ -815,11 +836,11 @@ function drawGame(gs) {
         }
         
         // Shield
-        if (gameState.m.shield > 0) {
-            ctx.strokeStyle = `rgba(155, 89, 182, ${gameState.m.shield / gameState.m.shieldMax})`;
+        if (gs.m.shield > 0) {
+            ctx.strokeStyle = `rgba(155, 89, 182, ${gs.m.shield / gs.m.shieldMax})`;
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(0, 0, (gameState.m.radius || 60) + 10, 0, Math.PI * 2);
+            ctx.arc(0, 0, (gs.m.radius || 60) + 10, 0, Math.PI * 2);
             ctx.stroke();
         }
         
@@ -829,18 +850,18 @@ function drawGame(gs) {
         ctx.lineWidth = 3;
         
         ctx.beginPath();
-        ctx.arc(0, 0, (gameState.m.radius || 60), 0, Math.PI * 2);
+        ctx.arc(0, 0, (gs.m.radius || 60), 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         
         // Rotating ring
-        ctx.rotate(gameState.m.ringAngle);
+        ctx.rotate(gs.m.ringAngle);
         ctx.strokeStyle = '#5dade2';
         ctx.lineWidth = 2;
         
         for (let i = 0; i < 8; i++) {
             ctx.beginPath();
-            ctx.arc(0, 0, (gameState.m.radius || 60) + 5, i * Math.PI / 4, i * Math.PI / 4 + Math.PI / 8);
+            ctx.arc(0, 0, (gs.m.radius || 60) + 5, i * Math.PI / 4, i * Math.PI / 4 + Math.PI / 8);
             ctx.stroke();
         }
         
@@ -848,7 +869,7 @@ function drawGame(gs) {
     }
 
     // Draw Merchants
-    gameState.merchants?.forEach(merch => {
+    gs.merchants?.forEach(merch => {
         ctx.save();
         ctx.translate(merch.x, merch.y);
         
@@ -918,7 +939,7 @@ function drawGame(gs) {
         const pr = (player.radius || 20);
         
         // Hyper Drive Visual
-        if (gameState.hyperDriveBoost && player.alive) {
+        if (gs.hyperDriveBoost && player.alive) {
             ctx.shadowBlur = 15;
             ctx.shadowColor = '#3498db';
             ctx.strokeStyle = '#3498db';
