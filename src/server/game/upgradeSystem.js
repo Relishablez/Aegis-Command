@@ -105,37 +105,48 @@ function applyUpgrade(room, playerId, upgradeId) {
     player.critChance = (player.critChance || 0) + 0.05;
   } else if (upgradeId === 'pickup_range') {
     gs.teamPickupRange = (gs.teamPickupRange || 0) + 25;
-  } else if (upgradeId === 'laser') {
-    const level = gs.playerUpgrades[playerId]['laser'];
-    player.weaponType = 'laser';
-    player.fireRate *= 1.1; // Slightly faster fire rate to feel better
-    player.bulletSize = 0.15 + (level * 0.1); // Sleek "Needle" laser
-    player.damage = (player.damage || 1) * 1.8; // Adjusted damage for high precision
-    player.laserRange = 500 + (level * 80); // Shorter range
-  } else if (upgradeId === 'homing_missile') {
-    const level = gs.playerUpgrades[playerId]['homing_missile'];
-    player.weaponType = 'homing_missile';
-    player.damage = (player.damage || 1) * 1.5;
-    player.fireRate *= 1.4; // Slower fire rate for missiles
-  }
+  // Recalculate stats based on level
+  const frLevel = gs.playerUpgrades[playerId]['fire_rate'] || 0;
+  const dmgLevel = gs.playerUpgrades[playerId]['damage'] || 0;
+  const msLevel = gs.playerUpgrades[playerId]['multishot'] || 0;
+  const bsLevel = gs.playerUpgrades[playerId]['bullet_size'] || 0;
+  const laserLevel = gs.playerUpgrades[playerId]['laser'] || 0;
+  const homingLevel = gs.playerUpgrades[playerId]['homing_missile'] || 0;
   
-  // Re-apply Super Upgrades so they aren't overwritten
-  if (player.superUpgradeSelected) {
-    // If they had super fire rate, re-halve fireRate and double damage
-    if (player.superFireRateActive && (upgradeId === 'fire_rate' || upgradeId === 'damage' || upgradeId === 'laser' || upgradeId === 'homing_missile')) {
-      player.fireRate *= 0.5;
-      player.damage *= 2;
-    }
-    // If they had super homing
-    if (player.superHomingActive && (upgradeId === 'homing' || upgradeId === 'explosive')) {
-      player.homing = 100;
-    }
-    // If they had super weapons
-    if (player.superWeaponsActive && (upgradeId === 'multishot' || upgradeId === 'bullet_size' || upgradeId === 'laser')) {
-      player.multiShot *= 3;
-      player.bulletSize *= 3;
-    }
+  // Base
+  player.fireRate = Math.max(2, 8 - frLevel * 0.7);
+  player.damage = 1 + dmgLevel * 0.15;
+  player.multiShot = 1 + msLevel;
+  player.bulletSize = 1 + bsLevel * 0.1;
+  
+  // Weapons
+  if (player.weaponType === 'laser') {
+    player.fireRate *= 1.1;
+    player.bulletSize = 0.15 + (laserLevel * 0.1);
+    player.damage *= 1.8;
+    player.laserRange = 500 + (laserLevel * 80);
+  } else if (player.weaponType === 'homing_missile') {
+    player.damage *= 1.5;
+    player.fireRate *= 1.4;
   }
+
+  // Super Upgrades
+  if (player.superFireRateActive) {
+    player.fireRate *= 0.5;
+    player.damage *= 2;
+  }
+  if (player.superWeaponsActive) {
+    player.multiShot *= 3;
+    player.bulletSize *= 3;
+  }
+  if (player.superHomingActive) {
+    player.homing = 100;
+  }
+
+  // Merchant Upgrades
+  if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
+  if (player.merchantDamage) player.damage *= player.merchantDamage;
+  if (player.merchantFireRate) player.fireRate *= player.merchantFireRate;
   
   return true;
 }
@@ -171,9 +182,54 @@ function pinUpgrade(player, upgradeId) {
   return true;
 }
 
+function recalculatePlayerStats(player, gs) {
+  const playerId = player.id;
+  if (!gs.playerUpgrades) return;
+  const upgrades = gs.playerUpgrades[playerId] || {};
+
+  const frLevel = upgrades['fire_rate'] || 0;
+  const dmgLevel = upgrades['damage'] || 0;
+  const msLevel = upgrades['multishot'] || 0;
+  const bsLevel = upgrades['bullet_size'] || 0;
+  const laserLevel = upgrades['laser'] || 0;
+  const homingLevel = upgrades['homing_missile'] || 0;
+  
+  player.fireRate = Math.max(2, 8 - frLevel * 0.7);
+  player.damage = 1 + dmgLevel * 0.15;
+  player.multiShot = 1 + msLevel;
+  player.bulletSize = 1 + bsLevel * 0.1;
+  
+  if (player.weaponType === 'laser') {
+    player.fireRate *= 1.1;
+    player.bulletSize = 0.15 + (laserLevel * 0.1);
+    player.damage *= 1.8;
+    player.laserRange = 500 + (laserLevel * 80);
+  } else if (player.weaponType === 'homing_missile') {
+    player.damage *= 1.5;
+    player.fireRate *= 1.4;
+  }
+
+  if (player.superFireRateActive) {
+    player.fireRate *= 0.5;
+    player.damage *= 2;
+  }
+  if (player.superWeaponsActive) {
+    player.multiShot *= 3;
+    player.bulletSize *= 3;
+  }
+  if (player.superHomingActive) {
+    player.homing = 100;
+  }
+
+  if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
+  if (player.merchantDamage) player.damage *= player.merchantDamage;
+  if (player.merchantFireRate) player.fireRate *= player.merchantFireRate;
+}
+
 module.exports = {
   applyUpgrade,
   generateUpgradeOptions,
   rerollUpgrades,
-  pinUpgrade
+  pinUpgrade,
+  recalculatePlayerStats
 };
