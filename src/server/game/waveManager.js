@@ -154,6 +154,13 @@ function updateWave(room) {
 
 function endWave(room, isMidWave = false) {
   const gs = room.gameState;
+  
+  // Prevent double-triggering endWave for the same wave (except for mid-wave upgrades)
+  if (gs.currentPhase !== 'COMBAT' && !isMidWave) {
+    console.log(`[WAVE] endWave ignored: Already in ${gs.currentPhase} phase.`);
+    return;
+  }
+
   console.log(`[WAVE] Ending Wave ${gs.wave} (MidWave: ${isMidWave}) Node: ${gs.encounterType}`);
   
   
@@ -178,6 +185,9 @@ function endWave(room, isMidWave = false) {
 
 function triggerNavigation(room) {
   const gs = room.gameState;
+  if (gs.currentPhase === 'NAVIGATION') return;
+  
+  console.log(`[NAV] Triggering navigation phase for room ${room.id}`);
   gs.currentPhase = 'NAVIGATION';
   gs.navigationPhase = true;
   gs.nodeVotes = {}; 
@@ -382,6 +392,13 @@ function startNextWave(room) {
   if (!gs.isMidWaveUpgrade) {
     gs.wave++;
     gs.waveTimer = 0;
+    
+    // Reset mothership to center for the new jump destination
+    if (gs.mothership) {
+      gs.mothership.x = GAME_WIDTH / 2;
+      gs.mothership.y = GAME_HEIGHT / 2;
+    }
+    
     startSelectedNode(room, gs.encounterType);
   }
   
