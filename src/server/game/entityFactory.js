@@ -20,6 +20,7 @@ function spawnPlayer(id, playerIndex, mothership) {
     radius: PLAYER.RADIUS,
     speed: PLAYER.SPEED,
     angle: 0,
+    weaponType: 'default',
     hull: PLAYER.HULL,
     maxHull: PLAYER.HULL,
     alive: true,
@@ -84,7 +85,7 @@ function spawnEnemy(room) {
   const diff = getDifficulty(room.gameState.wave);
   const isDiamond = Math.random() < 0.3;
   
-  const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.15; // +15% health per player
+  const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.25; // +25% health per player
   const hostScale = room.settings?.damageMultiplier || 1.0;
   const totalScale = playerScale * hostScale;
   
@@ -110,6 +111,7 @@ function spawnAsteroid(room) {
     case 3: x = -40; y = Math.random() * GAME_HEIGHT; break;
   }
   
+  const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.2;
   const diff = getDifficulty(room.gameState.wave);
   const numVerts = 5 + Math.floor(Math.random() * 4);
   const verts = [];
@@ -126,8 +128,8 @@ function spawnAsteroid(room) {
     rot: Math.random() * Math.PI * 2,
     rotSpeed: (Math.random() - 0.5) * 0.02,
     speed: diff.asteroidSpeed * (0.6 + Math.random() * 0.6),
-    hull: diff.asteroidHealth,
-    maxHull: diff.asteroidHealth
+    hull: diff.asteroidHealth * playerScale,
+    maxHull: diff.asteroidHealth * playerScale
   };
 }
 
@@ -233,7 +235,8 @@ function createGameState() {
       shield: 0,
       shieldMax: 0,
       shieldRegen: 0,
-      turretRange: 0,
+      autoTurret: 0,
+      turretRange: 500,
       speed: MOTHERSHIP.SPEED,
       lives: 3 // Teams share lives? No, user said "players will then have 3 lives each"
     },
@@ -263,6 +266,7 @@ function createGameState() {
     visitedNodes: [],
     nodeVotes: {},
     nodesVisited: 0,
+    historicalStats: {}, // Store stats of players who left
     gameStarted: false
   };
 }
