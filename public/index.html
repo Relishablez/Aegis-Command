@@ -621,6 +621,11 @@
                     style="position: absolute; top: 20px; right: 20px; z-index: 500; background: rgba(0,0,0,0.6); padding: 5px 15px; border: 1px solid #3498db; border-radius: 5px; font-weight: bold; color: #3498db; font-family: Orbitron;">
                     ROOM: ----</div>
                 <div class="xp-display" id="xpDisplay">GOLD: 0</div>
+                
+                <button id="pauseMenuBtn" class="btn" onclick="togglePauseMenu()"
+                    style="position: absolute; top: 60px; right: 20px; z-index: 500; cursor: pointer; padding: 5px 15px; font-size: 12px; border: 1px solid #e74c3c; border-radius: 5px; color: #e74c3c; background: rgba(231, 76, 60, 0.1);">
+                    ESC / MENU
+                </button>
             </div>
 
             <div class="ui-bottom">
@@ -652,7 +657,7 @@
         <div class="lobby-content">
             <h1>Aegis Command</h1>
             <div id="gameVersion" style="font-size: 10px; color: #7f8c8d; margin-top: -10px; margin-bottom: 20px;">
-                v1.4.0-STABLE</div>
+                v1.5.0-STABLE</div>
 
             <!-- Live Server Stats -->
             <div id="liveStats" style="
