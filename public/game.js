@@ -170,6 +170,11 @@ function handleMessage(msg) {
         case 'compendium_data':
             compendiumData = msg.upgrades;
             renderCompendium();
+            // Populate dev menu if it exists
+            const devSelect = document.getElementById('devUpgradeSelect');
+            if (devSelect && compendiumData) {
+                devSelect.innerHTML = compendiumData.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+            }
             break;
         case 'announcement':
             handleAnnouncement(msg);
@@ -1780,7 +1785,15 @@ function setupInputHandlers() {
         if (e.key === 'ArrowDown') keys.ArrowDown = true;
         if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
         if (e.key === 'ArrowRight') keys.ArrowRight = true;
-        if (e.key === 'Shift') keys.shift = true;
+        if (e.key === 'Shift') {
+            keys.shift = true;
+            // Toggle Dev Panel if player is DevMode
+            const player = gameState?.players?.[myId];
+            if (player && player.name && player.name.includes('DevMode')) {
+                const devPanel = document.getElementById('devPanel');
+                if (devPanel) devPanel.classList.toggle('hidden');
+            }
+        }
         if (e.key === ' ') {
             keys.space = true;
             mouseDown = true; // Space also triggers shooting
@@ -2105,3 +2118,12 @@ handleGameOver = (msg) => {
     document.getElementById('endgameVoteModal').classList.add('hidden');
     originalHandleGameOver(msg);
 };
+function sendDevAction(action, data) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'dev_action',
+            action: action,
+            data: data
+        }));
+    }
+}
