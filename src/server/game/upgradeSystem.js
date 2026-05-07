@@ -105,6 +105,8 @@ function applyUpgrade(room, playerId, upgradeId) {
     player.critChance = (player.critChance || 0) + 0.05;
   } else if (upgradeId === 'pickup_range') {
     gs.teamPickupRange = (gs.teamPickupRange || 0) + 25;
+  }
+  
   // Recalculate stats based on level
   const frLevel = gs.playerUpgrades[playerId]['fire_rate'] || 0;
   const dmgLevel = gs.playerUpgrades[playerId]['damage'] || 0;
