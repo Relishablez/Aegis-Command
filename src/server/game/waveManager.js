@@ -344,7 +344,12 @@ function startSelectedNode(room, nodeType) {
   const gs = room.gameState;
   gs.encounterType = nodeType;
   gs.spawnTimer = 0;
-  gs.waveDuration = WAVE_DURATIONS[nodeType] || 1800;
+  
+  const defaultDuration = WAVE_DURATIONS[nodeType] || 1800;
+  const customDuration = room.settings && room.settings.waveDuration ? room.settings.waveDuration * 30 : defaultDuration;
+  // If it's a boss, duration doesn't matter (ends on kill), but for others use the custom one.
+  gs.waveDuration = (nodeType === 'defense' || nodeType === 'escort' || nodeType === 'salvage') ? customDuration : defaultDuration;
+  
   gs.salvageCollected = 0;
   gs.merchants = [];
   
@@ -436,14 +441,40 @@ function startSelectedNode(room, nodeType) {
 
 function gameOver(room, victory) {
   room.gameState.gameOver = true;
+  const gs = room.gameState;
+  
   if (room.broadcastToRoom) {
+    let totalKills = 0;
     let totalGold = 0;
-    room.players.forEach(p => totalGold += p.gold);
+    const playerNames = [];
+    
+    room.players.forEach(p => {
+      totalGold += p.gold;
+      totalKills += (p.stats?.kills || 0);
+      playerNames.push(p.name || 'Pilot');
+    });
+    
+    const timeElapsed = Math.floor((Date.now() - (room.startTime || Date.now())) / 1000);
+    
     room.broadcastToRoom({
       type: 'gameover',
       title: victory ? 'MISSION COMPLETE' : 'MISSION FAILED',
-      stats: `Survived ${room.gameState.wave} nodes • ${totalGold} GOLD earned`
+      stats: `Survived ${gs.wave} nodes • ${totalGold} GOLD earned`
     });
+    
+    // Record to global leaderboard
+    if (typeof global.addLeaderboardEntry === 'function') {
+      global.addLeaderboardEntry({
+        names: playerNames.join(' & '),
+        playerCount: room.players.size,
+        isCoop: !room.isSinglePlayer && room.players.size > 1,
+        waves: gs.wave,
+        kills: totalKills,
+        timeSeconds: timeElapsed,
+        victory,
+        timestamp: Date.now()
+      });
+    }
   }
 }
 
