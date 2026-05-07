@@ -54,7 +54,8 @@ function updateWave(room) {
   // Enemy Spawning Logic
   if (gs.encounterType !== 'salvage' && gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
     gs.spawnTimer++;
-    const spawnRate = Math.max(20, 70 - gs.wave * 2); // Get faster as waves progress
+    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.2;
+    const spawnRate = Math.max(15, (70 - gs.wave * 2) / playerFactor); // Get faster as waves progress and more players join
     if (gs.spawnTimer >= spawnRate) {
       gs.spawnTimer = 0;
       const hasBoss = gs.enemies.some(e => e.isBoss);
@@ -80,8 +81,9 @@ function updateWave(room) {
   
   // Asteroid Spawning Logic
   if (gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
-    const asteroidRate = Math.max(120, 400 - gs.wave * 15);
-    if (gs.waveTimer % asteroidRate === 0) {
+    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.15;
+    const asteroidRate = Math.max(80, (400 - gs.wave * 15) / playerFactor);
+    if (gs.waveTimer % Math.floor(asteroidRate) === 0) {
       const { spawnAsteroid } = require('./entityFactory');
       gs.asteroids.push(spawnAsteroid(room));
     }
@@ -206,9 +208,10 @@ function triggerNavigation(room) {
       
       let isLocked = false;
       let lockReason = '';
-      if (type === 'merchant' && gs.merchantVisited) {
-        isLocked = true;
-        lockReason = 'ALREADY VISITED MERCHANT';
+      // Merchant node is never locked anymore, as per user request
+      if (type === 'merchant') {
+        isLocked = false;
+        lockReason = '';
       }
 
       options.push({
@@ -409,18 +412,22 @@ function startSelectedNode(room, nodeType) {
   }
   
     if (nodeType === 'merchant') {
+    gs.merchantVisited = true;
+    gs.merchantVisitCount = (gs.merchantVisitCount || 0) + 1;
+    const costMultiplier = 1 + (gs.merchantVisitCount - 1) * 0.5; // +50% cost each subsequent visit
+    
     const { spawnMerchant } = require('./entityFactory');
-    // Pool of powerful upgrades
+    // Pool of powerful upgrades with scaling costs
     const upgradesPool = [
-      { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull', cost: 400 },
-      { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts', cost: 600 },
-      { id: 'hyper_drives', name: 'Hyper Drives', desc: '300% Move Speed for the entire fleet', cost: 500 },
-      { id: 'homing_missiles', name: 'Homing Missiles', desc: 'All projectiles track enemies with high agility', cost: 450 },
-      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: 550 },
-      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for you', cost: 400 },
-      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for you', cost: 500 },
-      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for you', cost: 350 },
-      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Weapons arc chain lightning on hit', cost: 600 }
+      { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull', cost: Math.floor(400 * costMultiplier) },
+      { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts', cost: Math.floor(600 * costMultiplier) },
+      { id: 'hyper_drives', name: 'Hyper Drives', desc: '300% Move Speed for the entire fleet', cost: Math.floor(500 * costMultiplier) },
+      { id: 'homing_missiles', name: 'Homing Missiles', desc: 'All projectiles track enemies with high agility', cost: Math.floor(450 * costMultiplier) },
+      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: Math.floor(550 * costMultiplier) },
+      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for you', cost: Math.floor(400 * costMultiplier) },
+      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for you', cost: Math.floor(500 * costMultiplier) },
+      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for you', cost: Math.floor(350 * costMultiplier) },
+      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Weapons arc chain lightning on hit', cost: Math.floor(600 * costMultiplier) }
     ];
     // Shuffle and take first 5
     const shuffled = upgradesPool.sort(() => Math.random() - 0.5);
@@ -504,17 +511,45 @@ function gameOver(room, victory) {
     const playerNames = [];
     const pveStats = [];
     
+    // Combine active player stats with historical stats for departed players
+    const combinedStats = [];
+    
+    // Process active players
     room.players.forEach((p, id) => {
       totalGold += p.gold;
       totalKills += (p.stats?.kills || 0);
       playerNames.push(p.name || 'Pilot');
-      pveStats.push({
+      combinedStats.push({
         id: id,
         name: p.name || 'Pilot',
         kills: p.stats?.kills || 0,
-        damage: Math.floor(p.stats?.damageDealt || 0)
+        damage: Math.floor(p.stats?.damageDealt || 0),
+        gold: p.gold,
+        color: p.color,
+        isPvp: false
       });
     });
+
+    // Add historical stats for players who left
+    if (gs.historicalStats) {
+      Object.entries(gs.historicalStats).forEach(([id, stats]) => {
+        // Don't duplicate if they re-joined
+        if (!room.players.has(id)) {
+          totalKills += stats.kills;
+          totalGold += stats.gold;
+          combinedStats.push({
+            id: id,
+            name: stats.name + ' (Left)',
+            kills: stats.kills,
+            damage: stats.damage,
+            gold: stats.gold,
+            color: stats.color,
+            isPvp: false,
+            departed: true
+          });
+        }
+      });
+    }
     
     const timeElapsed = Math.floor((Date.now() - (room.startTime || Date.now())) / 1000);
     
@@ -522,7 +557,7 @@ function gameOver(room, victory) {
       type: 'gameover',
       title: victory ? 'MISSION COMPLETE' : 'MISSION FAILED',
       stats: `Survived ${gs.wave} nodes • ${totalGold} GOLD earned`,
-      pveStats: pveStats,
+      pveStats: combinedStats,
       pvpScores: gs.pvpScores || null
     });
     
@@ -553,6 +588,20 @@ function restartGame(room) {
       type: 'announcement',
       text: 'MISSION RESTARTED',
       sub: 'Protect the Mothership'
+    });
+  }
+}
+
+function triggerEndgameVoting(room) {
+  const gs = room.gameState;
+  gs.currentPhase = 'ENDGAME_VOTE';
+  gs.endgameVotes = {};
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'endgame_vote_start',
+      text: 'VICTORY!',
+      sub: 'Choose your final path:'
     });
   }
 }
@@ -591,5 +640,6 @@ module.exports = {
   startSelectedNode,
   triggerNavigation,
   triggerUpgradePhase,
-  selectNode
+  selectNode,
+  triggerEndgameVoting
 };
