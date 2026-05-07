@@ -208,6 +208,14 @@ function setupWebSocketHandlers(wss, roomManager) {
           return;
         }
 
+        // Dev actions
+        if (msg.type === 'dev_action') {
+          if (currentRoom && playerId) {
+            roomManager.handleDevAction(currentRoom, playerId, msg.action, msg.data);
+          }
+          return;
+        }
+
         // Ping for latency check
         if (msg.type === 'ping') {
           ws.send(JSON.stringify({
