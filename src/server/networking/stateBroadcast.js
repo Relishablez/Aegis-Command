@@ -21,6 +21,7 @@ function buildStateSnapshot(room) {
       merchantReady: p.merchantReady,
       gold: p.gold,
       stats: p.stats,
+      isDev: p.isDev || false,
       upgradeLevels: gs.playerUpgrades[p.id] || {}
     })),
     m: {
