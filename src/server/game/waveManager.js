@@ -128,7 +128,7 @@ function updateWave(room) {
   
   // Check mission completion
   if (gs.waveTimer >= gs.waveDuration) {
-    if (gs.encounterType !== 'boss') {
+    if (gs.encounterType !== 'boss' && gs.encounterType !== 'merchant') {
       endWave(room, false);
     }
   }
@@ -183,11 +183,32 @@ function updateWave(room) {
   }
 }
 
+function triggerSuperUpgrade(room) {
+  const gs = room.gameState;
+  gs.currentPhase = 'SUPER_UPGRADE';
+  
+  room.players.forEach(p => {
+    p.gold = (p.gold || 0) + 1500;
+    p.superUpgradeSelected = false;
+  });
+
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'super_upgrade_phase'
+    });
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: 'FLAGSHIP DEFEATED',
+      sub: 'REWARD: +1500 GOLD'
+    });
+  }
+}
+
 function endWave(room, isMidWave = false) {
   const gs = room.gameState;
   
   // Prevent double-triggering endWave for the same wave (except for mid-wave upgrades)
-  if (gs.currentPhase !== 'COMBAT' && !isMidWave) {
+  if (gs.currentPhase !== 'COMBAT' && gs.currentPhase !== 'SUPER_UPGRADE' && !isMidWave) {
     console.log(`[WAVE] endWave ignored: Already in ${gs.currentPhase} phase.`);
     return;
   }
