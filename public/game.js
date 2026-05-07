@@ -2165,10 +2165,20 @@ function togglePauseMenu() {
     ws.send(JSON.stringify({ type: 'toggle_pause' }));
     
     if (pauseMenu.classList.contains('hidden')) {
-        const prc = document.getElementById('pauseRoomCode');
-        if (prc) prc.textContent = window.roomCode ? `ROOM: ${window.roomCode}` : 'SINGLE PLAYER';
         pauseMenu.classList.remove('hidden');
         pauseMenu.style.display = 'block';
+        
+        // Update room code text based on visibility toggle
+        const codeSpan = document.getElementById('pauseRoomCodeText');
+        if (codeSpan) {
+            const icon = document.getElementById('toggleRoomCodeIcon');
+            const isHidden = icon && icon.classList.contains('fa-eye-slash');
+            codeSpan.textContent = `ROOM: ${isHidden ? '****' : (window.roomCode || 'SINGLE PLAYER')}`;
+        } else {
+            // Fallback for older UI
+            const prc = document.getElementById('pauseRoomCode');
+            if (prc) prc.textContent = window.roomCode ? `ROOM: ${window.roomCode}` : 'SINGLE PLAYER';
+        }
     } else {
         pauseMenu.classList.add('hidden');
         pauseMenu.style.display = 'none';
@@ -2658,23 +2668,7 @@ function loadLeaderboard(sortField) {
         });
 }
 
-function togglePauseMenu() {
-    const pm = document.getElementById('pauseMenu');
-    if (pm) {
-        if (pm.classList.contains('hidden')) {
-            pm.classList.remove('hidden');
-            const codeSpan = document.getElementById('pauseRoomCodeText');
-            if (codeSpan) {
-                // Determine if code is currently hidden
-                const icon = document.getElementById('toggleRoomCodeIcon');
-                const isHidden = icon && icon.classList.contains('fa-eye-slash');
-                codeSpan.textContent = `ROOM: ${isHidden ? '****' : roomCode || 'Unknown'}`;
-            }
-        } else {
-            pm.classList.add('hidden');
-        }
-    }
-}
+
 
 function toggleRoomCodeVisibility() {
     const codeSpan = document.getElementById('pauseRoomCodeText');
@@ -2692,12 +2686,7 @@ function toggleRoomCodeVisibility() {
     }
 }
 
-// Global keydown listeners for Escape
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        togglePauseMenu();
-    }
-});
+
 
 
 // Ensure gameover also hides the endgame modal
