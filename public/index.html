@@ -700,6 +700,15 @@
                     <div
                         style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;">
                         <div class="form-group" style="margin-bottom: 15px;">
+                            <label for="difficulty" style="font-size: 12px;">Difficulty</label>
+                            <select id="difficulty" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 8px; width: 100%; margin-top: 5px;">
+                                <option value="easy">Recruit (Easy)</option>
+                                <option value="normal" selected>Captain (Normal)</option>
+                                <option value="hard">Admiral (Hard)</option>
+                                <option value="insane">Aegis (Insane)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 15px;">
                             <label for="waveDuration" style="font-size: 12px;">Wave Duration (Seconds)</label>
                             <input type="number" id="waveDuration" value="60" min="10" max="300"
                                 style="padding: 8px; margin-top: 5px;">
@@ -739,7 +748,7 @@
 
                     <div class="form-group">
                         <label for="fpsLimit">Performance Limit (<span id="fpsValue">160</span> FPS)</label>
-                        <input type="range" id="fpsLimit" min="30" max="240" value="160" step="10" oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value);" style="width: 100%;">
+                        <input type="range" id="fpsLimit" min="30" max="240" value="160" step="10" oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const pf = document.getElementById('pauseFpsLimit'); if(pf){pf.value=this.value; document.getElementById('pauseFpsValue').textContent=this.value;}" style="width: 100%;">
                     </div>
 
                     <!-- Inline Error Display -->
@@ -786,9 +795,14 @@
         </div>
     </div>
 
-    <div id="gameOver" class="hidden">
+    <div id="gameOver" class="hidden" style="width: 600px; max-width: 90vw;">
         <h2 id="gameOverTitle">MISSION FAILED</h2>
         <p id="gameOverStats">Survived 0 waves • 0 GOLD earned</p>
+        
+        <div id="gameOverPlayerStats" style="margin: 20px 0; max-height: 300px; overflow-y: auto; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 8px;">
+            <!-- Player stats populated dynamically -->
+        </div>
+
         <div class="button-group">
             <button class="btn" onclick="restartGame()">Play Again</button>
             <button class="btn btn-secondary" onclick="backToLobby()">Back to Lobby</button>
@@ -809,6 +823,11 @@
                 style="flex: 1; height: 100px; font-size: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #27ae60;">
                 <span style="font-weight: bold; margin-bottom: 5px;">FINISH MISSION</span>
                 <span style="font-size: 12px; opacity: 0.8;">End run and see stats</span>
+            </button>
+            <button class="btn" id="voteEndlessBtn"
+                style="flex: 1; height: 100px; font-size: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #9b59b6;">
+                <span style="font-weight: bold; margin-bottom: 5px;">ENDLESS MODE</span>
+                <span style="font-size: 12px; opacity: 0.8;">Continue past Wave 15</span>
             </button>
             <button class="btn" id="votePvpBtn"
                 style="flex: 1; height: 100px; font-size: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #c0392b;">
@@ -913,14 +932,22 @@
     <!-- Dev Panel moved to end of body -->
 
     <!-- Pause Menu -->
-    <div id="pauseMenu" class="modal hidden" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 10, 10, 0.95); border: 2px solid #3498db; border-radius: 15px; padding: 30px; z-index: 5000; width: 400px; text-align: center; box-shadow: 0 0 50px rgba(52, 152, 219, 0.3);">
+    <div id="pauseMenu" class="modal hidden"
+        style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 10, 10, 0.95); border: 2px solid #3498db; border-radius: 15px; padding: 30px; z-index: 5000; width: 400px; text-align: center; box-shadow: 0 0 50px rgba(52, 152, 219, 0.3);">
         <h2 style="color: #3498db; margin-bottom: 5px;">GAME PAUSED</h2>
-        <div id="pauseRoomCode" style="color: #f1c40f; font-weight: bold; margin-bottom: 20px; font-family: Orbitron; font-size: 14px;"></div>
+        <div id="pauseRoomCode"
+            style="color: #f1c40f; font-weight: bold; margin-bottom: 20px; font-family: Orbitron; font-size: 14px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+            <span id="pauseRoomCodeText">ROOM: ****</span>
+            <i class="fas fa-eye" id="toggleRoomCodeIcon" style="cursor: pointer; color: #bdc3c7;" onclick="toggleRoomCodeVisibility()"></i>
+        </div>
         <div style="display: flex; flex-direction: column; gap: 15px;">
             <button class="btn" onclick="togglePauseMenu()">Resume</button>
             <div class="form-group" style="text-align: left;">
-                <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span id="pauseFpsValue">160</span> FPS)</label>
-                <input type="range" id="pauseFpsLimit" min="30" max="240" value="160" step="10" oninput="document.getElementById('pauseFpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value);" style="width: 100%;">
+                <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span
+                        id="pauseFpsValue">160</span> FPS)</label>
+                <input type="range" id="pauseFpsLimit" min="30" max="240" value="160" step="10"
+                    oninput="document.getElementById('pauseFpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const lf = document.getElementById('fpsLimit'); if(lf){lf.value=this.value; document.getElementById('fpsValue').textContent=this.value;}"
+                    style="width: 100%;">
             </div>
             <button class="btn btn-secondary" onclick="leaveRoom()" style="margin-top: 10px;">Leave Game</button>
         </div>
@@ -1021,9 +1048,12 @@
                 style="padding: 8px; font-size: 11px;">+1 FIRE RATE</button>
             <button class="btn" onclick="sendDevAction('set_stat', {stat: 'damage', value: 5})"
                 style="padding: 8px; font-size: 11px;">+5 DAMAGE</button>
-            <button class="btn" onclick="sendDevAction('god_mode')" style="padding: 8px; font-size: 11px; background: #9b59b6;">GOD MODE</button>
-            <button class="btn" onclick="sendDevAction('skip_wave')" style="padding: 8px; font-size: 11px; background: #f39c12;">SKIP WAVE</button>
-            <button class="btn" onclick="sendDevAction('add_xp', {amount: 9999})" style="padding: 8px; font-size: 11px; background: #2ecc71;">+1 LEVEL UP</button>
+            <button class="btn" onclick="sendDevAction('god_mode')"
+                style="padding: 8px; font-size: 11px; background: #9b59b6;">GOD MODE</button>
+            <button class="btn" onclick="sendDevAction('skip_wave')"
+                style="padding: 8px; font-size: 11px; background: #f39c12;">SKIP WAVE</button>
+            <button class="btn" onclick="sendDevAction('add_xp', {amount: 9999})"
+                style="padding: 8px; font-size: 11px; background: #2ecc71;">+1 LEVEL UP</button>
         </div>
 
         <div style="margin-bottom: 10px;">
