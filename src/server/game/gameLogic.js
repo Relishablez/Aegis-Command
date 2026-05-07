@@ -50,6 +50,7 @@ function updatePlayer(p, room) {
     let currentSpeed = p.speed;
     if (p.powerups.turbo > 0) currentSpeed *= 1.5;
     if (room.gameState.hyperDriveBoost) currentSpeed *= room.gameState.hyperDriveBoost;
+    if (p.merchantSpeed) currentSpeed *= p.merchantSpeed;
     
     if (p.dashDuration > 0) {
       currentSpeed *= 3;
@@ -402,6 +403,75 @@ function updateMothership(room) {
   }
 }
 
+function updateBossAI(boss, room) {
+  const gs = room.gameState;
+  const m = gs.mothership;
+  
+  // Basic movement (patrol or hover near top)
+  boss.phaseTimer = (boss.phaseTimer || 0) + 1;
+  boss.fireCooldown = (boss.fireCooldown || 0) - 1;
+  
+  if (boss.patrolAxis === 'x') {
+    boss.x += 2 * boss.patrolDir;
+    if (boss.x > 1500) boss.patrolDir = -1;
+    if (boss.x < 100) boss.patrolDir = 1;
+  } else {
+    boss.y += 1 * boss.patrolDir;
+    if (boss.y > 600) boss.patrolDir = -1;
+    if (boss.y < 100) boss.patrolDir = 1;
+  }
+
+  const { spawnBullet } = require('./entityFactory');
+  
+  // Wave specific behavior
+  if (gs.wave === 15) {
+    // Final Boss Mechanics
+    if (boss.phaseTimer % 300 < 150) {
+      // Rapid fire phase
+      if (boss.fireCooldown <= 0) {
+        for (let i = 0; i < 3; i++) {
+          const a = angle(boss, m) + (Math.random() - 0.5) * 0.5;
+          gs.bullets.push(spawnBullet(boss, a, 10, true)); // true = isEnemy
+        }
+        boss.fireCooldown = 20;
+      }
+    } else {
+      // Sweeping lasers / big slow missiles
+      if (boss.fireCooldown <= 0) {
+        const a = angle(boss, m);
+        const b = spawnBullet(boss, a, 5, true);
+        b.radius = 20;
+        b.type = 'big_orb';
+        gs.bullets.push(b);
+        boss.fireCooldown = 60;
+      }
+    }
+    
+    // Dodging mechanic
+    if (Math.random() < 0.02) {
+      boss.x += (Math.random() > 0.5 ? 100 : -100);
+      boss.y += (Math.random() > 0.5 ? 50 : -50);
+      boss.x = Math.max(100, Math.min(1500, boss.x));
+      boss.y = Math.max(100, Math.min(800, boss.y));
+    }
+  } else if (gs.wave === 10) {
+    // Medium Boss Mechanics
+    if (boss.fireCooldown <= 0) {
+      const a = angle(boss, m);
+      for (let i = -1; i <= 1; i++) {
+        gs.bullets.push(spawnBullet(boss, a + i * 0.2, 8, true));
+      }
+      boss.fireCooldown = 40;
+    }
+  } else {
+    // Easy Boss Mechanics (Wave 5)
+    if (boss.fireCooldown <= 0) {
+      gs.bullets.push(spawnBullet(boss, angle(boss, m), 6, true));
+      boss.fireCooldown = 60;
+    }
+  }
+}
+
 function updateEnemies(room) {
   const gs = room.gameState;
   const m = gs.mothership;
@@ -444,8 +514,9 @@ function updateEnemies(room) {
             e.hull -= 100; // Ramming damage
             return;
         }
+        let pDamage = 20 * (p.cursedDamageTaken || 1);
         if (p.shield > 0) {
-          p.shield -= 20;
+          p.shield -= pDamage;
           if (p.shield < 0) {
             p.hull += p.shield;
             p.shield = 0;
@@ -454,7 +525,7 @@ function updateEnemies(room) {
           if (p.powerups.invincible > 0) {
             e.hull -= 100; // Ramming damage
           } else {
-            p.hull -= 20;
+            p.hull -= pDamage;
             e.hull -= 5;
           }
         }
@@ -566,14 +637,15 @@ function updateAsteroids(room) {
       if (p.alive && dist(a, p) < a.radius + p.radius - 5) {
         if (p.powerups.invincible > 0 || p.godMode) return; // Invincible!
         
+        let pDamage = 25 * (p.cursedDamageTaken || 1);
         if (p.shield > 0) {
-          p.shield -= 25;
+          p.shield -= pDamage;
           if (p.shield < 0) {
             p.hull += p.shield;
             p.shield = 0;
           }
         } else {
-          p.hull -= 25;
+          p.hull -= pDamage;
         }
         a.hull -= 2;
         if (p.hull <= 0) {
@@ -831,14 +903,15 @@ function updateProjectiles(room) {
              break;
           }
           
+          let pDamage = damage * (p.cursedDamageTaken || 1);
           if (p.shield > 0) {
-            p.shield -= damage;
+            p.shield -= pDamage;
             if (p.shield < 0) {
               p.hull += p.shield;
               p.shield = 0;
             }
           } else {
-            p.hull -= damage;
+            p.hull -= pDamage;
           }
           
           if (p.hull <= 0) {
