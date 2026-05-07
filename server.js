@@ -41,6 +41,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Initialize room manager
 const roomManager = new RoomManager();
 
+// Global in-memory leaderboard (max 100 entries, FIFO)
+const leaderboard = [];
+global.addLeaderboardEntry = (entry) => {
+  leaderboard.push(entry);
+  if (leaderboard.length > 100) leaderboard.shift();
+};
+global.getRoomManager = () => roomManager;
+
 // Setup WebSocket handlers
 setupWebSocketHandlers(wss, roomManager);
 
@@ -106,6 +114,28 @@ app.get('/', (req, res) => {
 
 app.get('/api/rooms', (req, res) => {
   res.json(roomManager.getRoomList());
+});
+
+// Live player stats
+app.get('/api/stats', (req, res) => {
+  let soloPlayers = 0;
+  let coopPlayers = 0;
+  let activeRooms = 0;
+  for (const room of roomManager.rooms.values()) {
+    if (room.players.size === 0) continue;
+    activeRooms++;
+    if (room.isSinglePlayer || room.players.size === 1) {
+      soloPlayers += room.players.size;
+    } else {
+      coopPlayers += room.players.size;
+    }
+  }
+  res.json({ soloPlayers, coopPlayers, totalPlayers: soloPlayers + coopPlayers, activeRooms });
+});
+
+// Leaderboard
+app.get('/api/leaderboard', (req, res) => {
+  res.json(leaderboard);
 });
 
 // Health check for deployment platforms
