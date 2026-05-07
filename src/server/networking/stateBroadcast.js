@@ -35,6 +35,7 @@ function buildStateSnapshot(room) {
       radius: gs.mothership.radius
     },
     e: gs.enemies.map(e => ({
+      id: e.id,
       x: e.x,
       y: e.y,
       angle: e.angle,
@@ -45,6 +46,7 @@ function buildStateSnapshot(room) {
       isBoss: e.isBoss
     })),
     a: gs.asteroids.map(a => ({
+      id: a.id,
       x: a.x,
       y: a.y,
       rot: a.rot,
@@ -52,6 +54,7 @@ function buildStateSnapshot(room) {
       radius: a.radius
     })),
     b: gs.projectiles.map(b => ({
+      id: b.id,
       x: b.x,
       y: b.y,
       vx: b.vx || 0,
@@ -64,11 +67,13 @@ function buildStateSnapshot(room) {
       type: b.type || 'bullet'
     })),
     c: gs.pickups.map(c => ({
+      id: c.id,
       x: c.x,
       y: c.y,
       type: c.type
     })),
     d: gs.drones.map(d => ({
+      id: d.id,
       x: d.x,
       y: d.y,
       cooldown: d.fireCooldown
