@@ -1,517 +1,647 @@
+const { generateUpgradeOptions } = require('./upgradeSystem');
 const { 
-  MAX_PLAYERS_PER_ROOM, 
-  ROOM_INACTIVITY_TIMEOUT 
+  GAME_WIDTH, 
+  GAME_HEIGHT, 
+  WAVE_DURATIONS,
+  UPGRADE_MAX_TIME
 } = require('../config/constants');
-const { 
-  generateRoomCode, 
-  hashPassword, 
-  verifyPassword 
-} = require('../utils/helpers');
-const { createGameState } = require('../game/entityFactory');
-const { applyUpgrade, generateUpgradeOptions, rerollUpgrades } = require('../game/upgradeSystem');
-const { endWave, startNextWave, gameOver, restartGame, selectNode, handleVoteNode } = require('../game/waveManager');
 
-class RoomManager {
-  constructor() {
-    this.rooms = new Map(); // roomCode -> room object
-  }
+function updateWave(room) {
+  const gs = room.gameState;
+  if (!gs || gs.gameOver || !gs.gameStarted) return;
 
-  createRoom(password = null, isSinglePlayer = false, maxPlayers = MAX_PLAYERS_PER_ROOM, settings = null) {
-    const code = generateRoomCode();
-    
-    // Ensure uniqueness
-    if (this.rooms.has(code)) {
-      return this.createRoom(password, isSinglePlayer, maxPlayers, settings);
-    }
-    
-    const roomSettings = settings || {
-      waveDuration: 60,
-      damageMultiplier: 1.0,
-      goldMultiplier: 1.0
-    };
-    
-    const room = {
-      code,
-      passwordHash: password ? hashPassword(password) : null,
-      isPrivate: !!password,
-      isSinglePlayer: !!isSinglePlayer,
-      maxPlayers: Math.min(Math.max(1, maxPlayers), 8), // clamp between 1 and 8
-      settings: roomSettings,
-      players: new Map(),
-      ownerId: null,
-      gameState: createGameState(),
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
-      gameRunning: false,
-      broadcastToRoom: (msg) => this.broadcastToRoom(room, msg)
-    };
-    
-    this.rooms.set(code, room);
-    console.log(`Room ${code} created${password ? ' (password protected)' : ''} [Max: ${room.maxPlayers}]`);
-    return room;
-  }
-
-  getRoom(code) {
-    return this.rooms.get(code.toUpperCase());
-  }
-
-  deleteRoom(code) {
-    const room = this.rooms.get(code);
-    if (room) {
-      // Close all connections
-      room.players.forEach((player, id) => {
-        if (player.ws && player.ws.readyState === 1) { // WebSocket.OPEN
-          player.ws.close();
-        }
-      });
-      this.rooms.delete(code);
-      console.log(`Room ${code} deleted`);
-    }
-  }
-
-  cleanupInactiveRooms() {
-    const now = Date.now();
-    for (const [code, room] of this.rooms) {
-      if (room.players.size === 0 && now - room.lastActivity > ROOM_INACTIVITY_TIMEOUT) {
-        this.deleteRoom(code);
+  // Handle phase-specific logic
+  if (gs.currentPhase !== 'COMBAT') {
+    if (gs.currentPhase === 'UPGRADE') {
+      gs.upgradeTimer++;
+      const timeLeft = Math.max(0, Math.ceil((UPGRADE_MAX_TIME - gs.upgradeTimer) / 30));
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({
+          type: 'upgrade_timer_update',
+          timeLeft: timeLeft
+        });
+      }      
+      // Re-sync upgrade menu every 3 seconds for players who haven't picked
+      if (gs.upgradeTimer % 180 === 0) {
+        room.players.forEach((player, playerId) => {
+          if (!player.upgradeReady && player.pendingUpgrades) {
+            player.ws.send(JSON.stringify({
+              type: 'upgrade',
+              gold: player.gold,
+              levels: gs.playerUpgrades[playerId] || {},
+              options: player.pendingUpgrades,
+              playerId: playerId,
+              pinnedId: player.pinnedUpgradeId
+            }));
+          }
+        });
       }
     }
+    return;
   }
-
-  addPlayerToRoom(room, playerId, ws, playerData = {}) {
-    if (room.players.size >= room.maxPlayers) {
-      return false;
-    }
-    
-    if (room.isSinglePlayer && room.players.size > 0) {
-      return false;
-    }
-
-    const { spawnPlayer } = require('../game/entityFactory');
-    const playerIndex = room.players.size;
-    const player = spawnPlayer(playerId, playerIndex, room.gameState.mothership);
-    
-    // Apply additional player data
-    Object.assign(player, playerData);
-    player.ws = ws;
-
-    // Handle DevMode naming and duplicate detection
-    let finalName = playerData.name || 'Pilot';
-    if (finalName.toLowerCase() === 'devmode') {
-      let devCount = 0;
-      room.players.forEach(p => {
-        if (p.name && p.name.includes('DevMode')) devCount++;
-      });
-      finalName = devCount === 0 ? 'DevMode' : `DevMode[${devCount}]`;
-      player.isDev = true;
-    }
-    player.name = finalName;
-    
-    room.players.set(playerId, player);
-    room.lastActivity = Date.now();
-    
-    // Set first player as owner
-    if (!room.ownerId) {
-      room.ownerId = playerId;
-    }
-    
-    return true;
+  
+  // COMBAT Phase
+  
+  // Process pending level ups (queueing ensures we don't trigger multiple at once or conflict with wave end)
+  if (gs.pendingLevelUps && gs.pendingLevelUps > 0) {
+    gs.pendingLevelUps--;
+    endWave(room, true);
+    return;
   }
-
-  removePlayerFromRoom(room, playerId) {
-    // Save historical stats before deleting
-    const player = room.players.get(playerId);
-    if (player && room.gameState) {
-      room.gameState.historicalStats[playerId] = {
-        name: player.name || 'Pilot',
-        kills: player.stats?.kills || 0,
-        damage: Math.floor(player.stats?.damageDealt || 0),
-        gold: player.gold,
-        color: player.color,
-        leftMidGame: true
-      };
-    }
-    room.players.delete(playerId);
-    room.lastActivity = Date.now();
-    
-    // If owner leaves, assign new owner
-    if (room.ownerId === playerId && room.players.size > 0) {
-      room.ownerId = room.players.keys().next().value;
-    }
-    
-    // Delete room if empty
-    if (room.players.size === 0) {
-      setTimeout(() => {
-        if (room.players.size === 0) {
-          this.deleteRoom(room.code);
-        }
-      }, ROOM_INACTIVITY_TIMEOUT);
-    }
-  }
-
-  getRoomList() {
-    return Array.from(this.rooms.values()).map(room => ({
-      code: room.code,
-      playerCount: room.players.size,
-      maxPlayers: MAX_PLAYERS_PER_ROOM,
-      isPrivate: room.isPrivate,
-      gameRunning: room.gameRunning,
-      wave: room.gameState.wave
-    }));
-  }
-
-  broadcastToRoom(room, msg) {
-    const data = JSON.stringify(msg);
-    room.players.forEach(p => {
-      if (p.ws && p.ws.readyState === 1) { // WebSocket.OPEN
-        p.ws.send(data);
-      }
-    });
-  }
-
-  handleUpgradeSelect(room, playerId, upgradeId) {
-    if (applyUpgrade(room, playerId, upgradeId)) {
-      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
-      const player = room.players.get(playerId);
-      if (player) {
-        player.ws.send(JSON.stringify({
-          type: 'upgrade_applied',
-          levels: playerUpgrades,
-          gold: player.gold
-        }));
-        
-        player.upgradeReady = true;
-        player.pendingUpgrades = null; // Clear pending upgrades after purchase
-        
-        // Clear pin if this was the pinned upgrade
-        if (player.pinnedUpgradeId === upgradeId) {
-          player.pinnedUpgradeId = null;
-        }
-      }
-      
-      // Check if all players are ready
-      const allReady = Array.from(room.players.values()).every(p => p.upgradeReady);
-      if (allReady) {
-        setTimeout(() => {
-          startNextWave(room);
-        }, 1000);
+  
+  gs.waveTimer++;
+  
+  // Enemy Spawning Logic
+  if (gs.encounterType !== 'salvage' && gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
+    gs.spawnTimer++;
+    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.2;
+    const spawnRate = Math.max(15, (70 - gs.wave * 2) / playerFactor); // Get faster as waves progress and more players join
+    if (gs.spawnTimer >= spawnRate) {
+      gs.spawnTimer = 0;
+      const hasBoss = gs.enemies.some(e => e.isBoss);
+      if (!hasBoss) {
+        const { spawnEnemy } = require('./entityFactory');
+        gs.enemies.push(spawnEnemy(room));
       }
     }
-  }
-
-  handlePinUpgrade(room, playerId, upgradeId) {
-    const player = room.players.get(playerId);
-    if (player) {
-      if (player.pinnedUpgradeId === upgradeId) {
-        player.pinnedUpgradeId = null;
-      } else {
-        player.pinnedUpgradeId = upgradeId;
-      }
-      player.ws.send(JSON.stringify({
-        type: 'upgrade_pinned',
-        pinnedId: player.pinnedUpgradeId
-      }));
+  } else if (gs.encounterType === 'salvage') {
+    gs.spawnTimer++;
+    if (gs.spawnTimer >= 40) {
+      gs.spawnTimer = 0;
+      const { spawnPickup } = require('./entityFactory');
+      const types = ['gold', 'gold', 'health', 'team_health', 'mothership_health', 'xp'];
+      const pType = types[Math.floor(Math.random() * types.length)];
+      gs.pickups.push(spawnPickup(
+        50 + Math.random() * (GAME_WIDTH - 100),
+        50 + Math.random() * (GAME_HEIGHT - 100),
+        pType
+      ));
     }
   }
-
-  handleSkipUpgrade(room, playerId) {
-    const player = room.players.get(playerId);
-    if (player) {
-      player.upgradeReady = true;
-      player.pendingUpgrades = null; // Clear pending upgrades after skip
-      player.ws.send(JSON.stringify({
-        type: 'upgrade_skipped'
-      }));
-      
-      // Check if all players are ready
-      const allReady = Array.from(room.players.values()).every(p => p.upgradeReady);
-      if (allReady) {
-        const { startNextWave } = require('../game/waveManager');
-        setTimeout(() => {
-          startNextWave(room);
-        }, 1000);
-      }
+  
+  // Asteroid Spawning Logic
+  if (gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
+    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.15;
+    const asteroidRate = Math.max(80, (400 - gs.wave * 15) / playerFactor);
+    if (gs.waveTimer % Math.floor(asteroidRate) === 0) {
+      const { spawnAsteroid } = require('./entityFactory');
+      gs.asteroids.push(spawnAsteroid(room));
     }
   }
-
-  handleRerollUpgrades(room, playerId) {
-    const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
-    const player = room.players.get(playerId);
-    if (player && player.gold >= 100) {
-      player.gold -= 100;
-      const { generateUpgradeOptions } = require('../game/upgradeSystem');
-      const newOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
-      player.pendingUpgrades = newOptions; // Update stored options
-      player.upgradeReady = false; // Unskip player
-      player.ws.send(JSON.stringify({
-        type: 'upgrade_rerolled',
-        options: newOptions,
-        gold: player.gold,
-        levels: playerUpgrades,
-        pinnedId: player.pinnedUpgradeId
-      }));
-    }
-  handleVoteNode(room, playerId, nodeId) {
-    handleVoteNode(room, playerId, nodeId);
+  
+  // Update wave display text
+  if (gs.encounterNames) {
+    gs.waveDisplayName = `WAVE ${gs.wave}`;
+    gs.encounterDisplayName = gs.encounterNames[gs.encounterType] || 'MISSION';
   }
-
-  handleVoteEndgame(room, playerId, choice) {
-    const gs = room.gameState;
-    if (gs.currentPhase !== 'ENDGAME_VOTE') return;
-    
-    gs.endgameVotes[playerId] = choice;
-    
-    room.broadcastToRoom({
-      type: 'endgame_vote_update',
-      votes: gs.endgameVotes
-    });
-    
-    // Check if everyone voted
-    let allVoted = true;
-    room.players.forEach((p, id) => {
-      if (!gs.endgameVotes[id]) allVoted = false;
-    });
-    
-    if (allVoted) {
-      const pvpVotes = Object.values(gs.endgameVotes).filter(v => v === 'pvp').length;
-      const { startSelectedNode, gameOver } = require('../game/waveManager');
-      
-      if (pvpVotes > 0) {
-        // At least one person wants to fight!
-        startSelectedNode(room, 'pvp');
-      } else {
-        // Everyone wants to go home
-        gameOver(room, true);
-      }
-    }
-  }
-
-  handleRestartGame(room) {
-    restartGame(room);
-  }
-
-  handleEndWave(room) {
-    room.players.forEach((player, playerId) => {
-      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
-      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
-      
-      player.ws.send(JSON.stringify({
-        type: 'upgrade',
-        gold: player.gold,
-        levels: playerUpgrades,
-        options: upgradeOptions,
-        playerId: playerId,
-        pinnedId: player.pinnedUpgradeId
-      }));
-    });
-    
-    // Broadcast timer start to all
-    if (room.broadcastToRoom) {
-      const { UPGRADE_MAX_TIME } = require('../config/constants');
-      room.broadcastToRoom({
-        type: 'upgrade_timer_start',
-        maxTime: UPGRADE_MAX_TIME
-      });
-    }
-  }
-
-  handleGameOver(room, victory) {
-    gameOver(room, victory);
-  }
-
-  handleBuyMerchant(room, playerId, merchantId) {
-    const gs = room.gameState;
-    const player = room.players.get(playerId);
-    if (!player) return;
-
-    const merchantIndex = gs.merchants.findIndex(m => m.id === merchantId);
-    if (merchantIndex === -1) return;
-    
-    const merchant = gs.merchants[merchantIndex];
-    const upgrade = merchant.upgrade;
-    
-    if (player.gold >= upgrade.cost) {
-      player.gold -= upgrade.cost;
-      
-      // Store persistent upgrade with buyer attribution
-      if (!gs.purchasedMerchantUpgrades) gs.purchasedMerchantUpgrades = [];
-      gs.purchasedMerchantUpgrades.push({ 
-        id: upgrade.id, 
-        buyerName: player.name || 'Anonymous' 
-      });
-      
-      // Apply immediate effect if needed
-      if (upgrade.id === 'titanium_hull') {
-        gs.mothership.maxHull += 1500;
-        gs.mothership.hull += 1500;
-      }
-      if (upgrade.id === 'orbital_strike') gs.orbitalStrikeUnlocked = true;
-      if (upgrade.id === 'hyper_drives') {
-        if (!gs.hyperDriveLevel) gs.hyperDriveLevel = 0;
-        if (gs.hyperDriveLevel < 2) { // Cap at +100% (2.0 multiplier)
-          gs.hyperDriveLevel++;
-          gs.hyperDriveBoost = 1.0 + (gs.hyperDriveLevel * 0.5);
-        } else {
-          // Cap reached, refund gold + bonus
-          player.gold += 3000;
-          player.ws.send(JSON.stringify({
-            type: 'announcement',
-            text: 'SPEED CAP REACHED',
-            sub: '+3000 GOLD COMPENSATED'
-          }));
-        }
-      }
-      if (upgrade.id === 'homing_missiles') gs.teamHomingBoost = true;
-      if (upgrade.id === 'quantum_shield') {
-         gs.mothership.shieldMax = (gs.mothership.shieldMax || 0) + 1000;
-         gs.mothership.shield = gs.mothership.shieldMax;
-      }
-      
-      // Player specific
-      if (upgrade.id === 'double_projectiles') player.merchantMultiShot = (player.merchantMultiShot || 1) * 2;
-      if (upgrade.id === 'double_damage') player.merchantDamage = (player.merchantDamage || 1) * 2;
-      if (upgrade.id === 'rate_of_fire') player.merchantFireRate = (player.merchantFireRate || 1) * 0.5;
-      if (upgrade.id === 'chain_lightning') player.chainLightning = true;
-      
-      const { recalculatePlayerStats } = require('../game/upgradeSystem');
-      recalculatePlayerStats(player, gs);
-      
-      if (gs.mothership.hull > gs.mothership.maxHull) gs.mothership.hull = gs.mothership.maxHull;
-      
-      // Increase cost for the next purchase
-      upgrade.cost = Math.floor(upgrade.cost * 1.5);
-      
-      // Notify player
-      player.ws.send(JSON.stringify({
-        type: 'merchant_bought',
-        upgradeId: upgrade.id,
-        gold: player.gold
-      }));
-      
-      // Broadcast update
-      this.broadcastToRoom(room, {
-        type: 'announcement',
-        text: 'UPGRADE ACQUIRED',
-        sub: `${player.name || 'A pilot'} bought ${upgrade.name}`
-      });
-    } else {
-      player.ws.send(JSON.stringify({
-        type: 'error',
-        message: 'Not enough GOLD!'
-      }));
-    }
-  }
-
-  handleMerchantReady(room, playerId) {
-    const gs = room.gameState;
-    const player = room.players.get(playerId);
-    if (!player || gs.encounterType !== 'merchant') return;
-
-    player.merchantReady = !player.merchantReady;
-    
-    room.broadcastToRoom({
-      type: 'player_merchant_ready',
-      playerId: playerId,
-      ready: player.merchantReady
-    });
-
-    let allReady = true;
-    room.players.forEach(p => {
-      if (!p.merchantReady) allReady = false;
-    });
-
-    if (allReady) {
-      // Lazy load to avoid circular dependency
-      const { endWave } = require('../game/waveManager');
+  
+  // Check mission completion
+  if (gs.waveTimer >= gs.waveDuration) {
+    if (gs.encounterType !== 'boss') {
       endWave(room, false);
     }
   }
-
-  handleSelectSuperUpgrade(room, playerId, upgradeId) {
-    const gs = room.gameState;
-    const player = room.players.get(playerId);
-    if (!player || gs.currentPhase !== 'SUPER_UPGRADE') return;
-
-    // Apply super upgrade
-    if (upgradeId === 'super_fire_rate') {
-      player.superFireRateActive = true;
-    } else if (upgradeId === 'super_homing') {
-      player.superHomingActive = true;
-    } else if (upgradeId === 'super_drones') {
-      const droneCount = gs.drones.filter(d => d.ownerId === playerId).length;
-      const { spawnDrone } = require('../game/entityFactory');
-      for (let i = 0; i < droneCount; i++) {
-        gs.drones.push(spawnDrone(gs.mothership));
+  
+  // Check game over
+  if (gs.mothership.hull <= 0) {
+    gameOver(room, false);
+  }
+  
+  // Final Boss victory condition (Wave 15)
+  if (gs.encounterType === 'boss' && gs.wave >= 15 && gs.enemies.length === 0 && gs.waveTimer > 300) {
+    if (!room.isSinglePlayer && room.players.size > 1 && !gs.offeredPvp) {
+      gs.offeredPvp = true;
+      gs.currentPhase = 'NAVIGATION';
+      gs.navigationPhase = true;
+      gs.nodeVotes = {};
+      gs.navigationOptions = [
+        {
+          id: 'node_finish',
+          type: 'finish',
+          name: 'FINISH MISSION',
+          description: 'Return to base with honors.',
+          icon: '🏆',
+          votes: 0,
+          locked: false
+        },
+        {
+          id: 'node_pvp',
+          type: 'pvp',
+          name: 'PVP SHOWDOWN',
+          description: 'Settle the score. Last man standing.',
+          icon: '⚔️',
+          votes: 0,
+          locked: false
+        }
+      ];
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({
+          type: 'navigation_options',
+          options: gs.navigationOptions,
+          votes: {}
+        });
+        room.broadcastToRoom({
+          type: 'announcement',
+          text: 'MISSION ACCOMPLISHED',
+          sub: 'What is your next move?'
+        });
       }
-      gs.droneFireRateBonus += 2;
-    } else if (upgradeId === 'super_weapons') {
-      player.superWeaponsActive = true;
-    }
-    
-    const { recalculatePlayerStats } = require('../game/upgradeSystem');
-    recalculatePlayerStats(player, gs);
-
-    player.superUpgradeSelected = true;
-
-    // Check if everyone has selected
-    let allSelected = true;
-    room.players.forEach(p => {
-      if (!p.superUpgradeSelected) allSelected = false;
-    });
-
-    if (allSelected) {
-      const { endWave } = require('../game/waveManager');
-      // After boss and super upgrade, the wave is effectively over, proceed to navigation
-      endWave(room, false);
+    } else if (!gs.offeredPvp) {
+      gameOver(room, true);
     }
   }
+}
 
-  handleDevAction(room, playerId, action, data) {
-    const player = room.players.get(playerId);
-    if (!player || !player.isDev) return;
+function endWave(room, isMidWave = false) {
+  const gs = room.gameState;
+  console.log(`[WAVE] Ending Wave ${gs.wave} (MidWave: ${isMidWave}) Node: ${gs.encounterType}`);
+  
+  
+  // Clear entities for fresh start (unless mid-wave)
+  if (!isMidWave) {
+    gs.enemies = [];
+    gs.asteroids = [];
+    gs.projectiles = [];
+    gs.pickups = [];
+  }
+  
+  if (isMidWave) {
+    triggerUpgradePhase(room, true);
+  } else {
+    // Reward players with +1 life every successful jump
+    room.players.forEach(p => {
+      p.lives = (p.lives || 0) + 1;
+    });
+    triggerNavigation(room);
+  }
+}
 
-    const gs = room.gameState;
-    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+function triggerNavigation(room) {
+  const gs = room.gameState;
+  gs.currentPhase = 'NAVIGATION';
+  gs.navigationPhase = true;
+  gs.nodeVotes = {}; 
+  
+  const options = [];
+  const nextWave = gs.wave + 1;
+  const isBossComing = (nextWave === 5 || nextWave === 10 || nextWave === 15);
+  
+  if (isBossComing) {
+    options.push({
+      id: 'node_boss',
+      type: 'boss',
+      name: 'FLAGSHIP SIGNAL',
+      description: 'CRITICAL THREAT DETECTED. FLAGSHIP IS HERE.',
+      icon: '☠️',
+      votes: 0,
+      locked: false
+    });
+    console.log(`[NAV] Boss wave approaching. Forcing boss node.`);
+  } else {
+    const nodeTypes = ['defense', 'escort', 'salvage', 'merchant'];
+    if (Math.random() < 0.25) nodeTypes.push('pvp');
+    
+    const available = [...nodeTypes];
+    for (let i = 0; i < 3; i++) {
+      const idx = Math.floor(Math.random() * available.length);
+      const type = available.splice(idx, 1)[0] || 'defense';
+      
+      let isLocked = false;
+      let lockReason = '';
+      // Merchant node is never locked anymore, as per user request
+      if (type === 'merchant') {
+        isLocked = false;
+        lockReason = '';
+      }
 
-    switch (action) {
-      case 'add_gold':
-        player.gold += (data.amount || 1000);
-        break;
-      case 'set_stat':
-        if (data.stat === 'fireRate') player.fireRate = Math.max(1, (player.fireRate || 8) - (data.value || 1));
-        if (data.stat === 'damage') player.damage = (player.damage || 1) + (data.value || 1);
-        if (data.stat === 'speed') player.speed = (player.speed || 4) + (data.value || 1);
-        break;
-      case 'apply_upgrade':
-        const upgradeId = data.upgradeId;
-        if (!gs.playerUpgrades[playerId]) gs.playerUpgrades[playerId] = {};
-        const currentLevel = gs.playerUpgrades[playerId][upgradeId] || 0;
-        gs.playerUpgrades[playerId][upgradeId] = currentLevel + 1;
-        recalculatePlayerStats(player, gs);
-        break;
-      case 'mothership_heal':
-        gs.mothership.hull = gs.mothership.maxHull;
-        break;
-    }
-
-    // Broadcast update
-    if (room.broadcastToRoom) {
-      room.broadcastToRoom({
-        type: 'dev_action_applied',
-        playerId: playerId,
-        action: action
+      options.push({
+        id: `node_${i}`,
+        type: type,
+        name: type.toUpperCase(),
+        description: `Jump to ${type} sector`,
+        icon: type === 'merchant' ? '🛒' : type === 'salvage' ? '💎' : '⚔️',
+        votes: 0,
+        locked: isLocked,
+        lockReason: lockReason
       });
     }
   }
-
-  broadcastToRoom(room, msg) {
-    const json = JSON.stringify(msg);
-    room.players.forEach(player => {
-      if (player.ws && player.ws.readyState === 1) { // 1 = OPEN
-        player.ws.send(json);
-      }
+  
+  gs.navigationOptions = options;
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'navigation_options',
+      options: options,
+      votes: {}
+    });
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: 'MISSION COMPLETE',
+      sub: 'Select next jump destination'
     });
   }
 }
 
-module.exports = RoomManager;
+function handleVoteNode(room, playerId, nodeId) {
+  const gs = room.gameState;
+  if (gs.currentPhase !== 'NAVIGATION') return;
+
+  // Clear previous votes
+  for (const nid in gs.nodeVotes) {
+    gs.nodeVotes[nid] = (gs.nodeVotes[nid] || []).filter(id => id !== playerId);
+  }
+
+  // Add new vote
+  if (!gs.nodeVotes[nodeId]) gs.nodeVotes[nodeId] = [];
+  gs.nodeVotes[nodeId].push(playerId);
+
+  // Sync vote counts in options
+  gs.navigationOptions.forEach(opt => {
+    opt.votes = gs.nodeVotes[opt.id]?.length || 0;
+  });
+
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'navigation_options',
+      options: gs.navigationOptions,
+      votes: gs.nodeVotes
+    });
+  }
+
+  checkNavigationVotes(room);
+}
+
+function checkNavigationVotes(room) {
+  const gs = room.gameState;
+  const totalPlayers = room.players.size;
+  if (totalPlayers === 0) return;
+
+  let winner = null;
+  let maxVotes = 0;
+  let totalVotes = 0;
+
+  gs.navigationOptions.forEach(opt => {
+    const votes = gs.nodeVotes[opt.id]?.length || 0;
+    totalVotes += votes;
+    if (votes > maxVotes) {
+      maxVotes = votes;
+      winner = opt;
+    }
+  });
+
+  if (!winner) return;
+
+  const majority = Math.floor(totalPlayers / 2) + 1;
+  const allVoted = totalVotes >= totalPlayers;
+
+  if (maxVotes >= majority || allVoted) {
+    if (!gs.visitedNodes) gs.visitedNodes = [];
+    gs.visitedNodes.push(winner.type);
+    gs.nodesVisited++;
+    selectNode(room, winner.type);
+  }
+}
+
+function selectNode(room, nodeType) {
+  const gs = room.gameState;
+  gs.navigationPhase = false;
+  gs.navigationOptions = null;
+  
+  if (nodeType === 'finish') {
+    gameOver(room, true);
+    return;
+  }
+  
+  const validNodes = ['defense', 'escort', 'salvage', 'merchant', 'pvp', 'boss'];
+  if (!validNodes.includes(nodeType)) {
+    console.error(`[NAV] Invalid node selection: ${nodeType}. Defaulting to defense.`);
+    nodeType = 'defense';
+  }
+
+  gs.encounterType = nodeType;
+  console.log(`[NAV] Transitioning to: ${nodeType}`);
+  
+  if (nodeType === 'merchant') {
+    gs.merchantVisited = true;
+  }
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({ type: 'warp_start' });
+  }
+
+  // Clear merchant ready status
+  room.players.forEach(p => p.merchantReady = false);
+  
+  setTimeout(() => {
+    triggerUpgradePhase(room, false);
+  }, 1000);
+}
+
+function triggerUpgradePhase(room, isMidWave) {
+  const gs = room.gameState;
+  gs.currentPhase = 'UPGRADE';
+  gs.waitingForUpgrade = true;
+  gs.isMidWaveUpgrade = isMidWave;
+  gs.upgradeTimer = 0;
+  
+  room.players.forEach((player, playerId) => {
+    player.upgradeReady = false;
+    const playerUpgrades = gs.playerUpgrades[playerId] || {};
+    const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+    player.pendingUpgrades = upgradeOptions;
+    
+    player.ws.send(JSON.stringify({
+      type: 'upgrade',
+      gold: player.gold,
+      levels: playerUpgrades,
+      options: upgradeOptions,
+      playerId: playerId,
+      pinnedId: player.pinnedUpgradeId
+    }));
+  });
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: isMidWave ? 'LEVEL UP!' : 'PREPARE FOR JUMP',
+      sub: isMidWave ? 'New power available!' : 'Spend your GOLD before we warp!'
+    });
+    room.broadcastToRoom({
+      type: 'upgrade_timer_start',
+      maxTime: UPGRADE_MAX_TIME
+    });
+  }
+}
+
+function startNextWave(room) {
+  const gs = room.gameState;
+  gs.waitingForUpgrade = false;
+  gs.currentPhase = 'COMBAT';
+  
+  if (!gs.isMidWaveUpgrade) {
+    gs.wave++;
+    gs.waveTimer = 0;
+    startSelectedNode(room, gs.encounterType);
+  }
+  
+  gs.isMidWaveUpgrade = false;
+}
+
+function startSelectedNode(room, nodeType) {
+  const gs = room.gameState;
+  gs.encounterType = nodeType;
+  gs.spawnTimer = 0;
+  
+  const defaultDuration = WAVE_DURATIONS[nodeType] || 1800;
+  const customDuration = room.settings && room.settings.waveDuration ? room.settings.waveDuration * 30 : defaultDuration;
+  // If it's a boss, duration doesn't matter (ends on kill), but for others use the custom one.
+  gs.waveDuration = (nodeType === 'defense' || nodeType === 'escort' || nodeType === 'salvage') ? customDuration : defaultDuration;
+  
+  gs.salvageCollected = 0;
+  gs.merchants = [];
+  
+  if (nodeType === 'escort') {
+    gs.mothership.x = GAME_WIDTH * 0.15;
+    gs.mothership.y = GAME_HEIGHT / 2;
+    gs.targetX = GAME_WIDTH * 0.85;
+    gs.targetY = GAME_HEIGHT / 2;
+  } else {
+    gs.mothership.x = GAME_WIDTH / 2;
+    gs.mothership.y = GAME_HEIGHT / 2;
+  }
+  
+    if (nodeType === 'merchant') {
+    gs.merchantVisited = true;
+    gs.merchantVisitCount = (gs.merchantVisitCount || 0) + 1;
+    const costMultiplier = 1 + (gs.merchantVisitCount - 1) * 0.5; // +50% cost each subsequent visit
+    
+    const { spawnMerchant } = require('./entityFactory');
+    // Pool of powerful upgrades with scaling costs
+    const upgradesPool = [
+      { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull', cost: Math.floor(400 * costMultiplier) },
+      { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts', cost: Math.floor(600 * costMultiplier) },
+      { id: 'hyper_drives', name: 'Hyper Drives', desc: '300% Move Speed for the entire fleet', cost: Math.floor(500 * costMultiplier) },
+      { id: 'homing_missiles', name: 'Homing Missiles', desc: 'All projectiles track enemies with high agility', cost: Math.floor(450 * costMultiplier) },
+      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: Math.floor(550 * costMultiplier) },
+      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for you', cost: Math.floor(400 * costMultiplier) },
+      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for you', cost: Math.floor(500 * costMultiplier) },
+      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for you', cost: Math.floor(350 * costMultiplier) },
+      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Weapons arc chain lightning on hit', cost: Math.floor(600 * costMultiplier) }
+    ];
+    // Shuffle and take first 5
+    const shuffled = upgradesPool.sort(() => Math.random() - 0.5);
+    const positions = [
+      { x: GAME_WIDTH * 0.2, y: GAME_HEIGHT * 0.3 },
+      { x: GAME_WIDTH * 0.5, y: GAME_HEIGHT * 0.2 },
+      { x: GAME_WIDTH * 0.8, y: GAME_HEIGHT * 0.3 },
+      { x: GAME_WIDTH * 0.35, y: GAME_HEIGHT * 0.6 },
+      { x: GAME_WIDTH * 0.65, y: GAME_HEIGHT * 0.6 }
+    ];
+    for (let i = 0; i < 5; i++) {
+      const merch = spawnMerchant(positions[i].x, positions[i].y, shuffled[i]);
+      gs.merchants.push(merch);
+    }
+    gs.waveDuration = 1800; // 30 seconds merchant phase
+  } else if (nodeType === 'pvp') {
+    gs.waveDuration = 3600; // 60 seconds
+    gs.pvpScores = gs.pvpScores || {};
+    room.players.forEach((p, id) => {
+      gs.pvpScores[id] = gs.pvpScores[id] || 0;
+      p.maxHull = Math.max(p.maxHull || 100, 300);
+      p.hull = p.maxHull;
+    });
+  } else if (nodeType !== 'salvage') {
+    const { spawnEnemy } = require('./entityFactory');
+    const isBossWave = gs.wave === 5 || gs.wave === 10 || gs.wave === 15;
+    
+    if (isBossWave) {
+      // Spawn Boss
+      const boss = spawnEnemy(room);
+      boss.radius = 120; // Massive boss
+      boss.maxHull = 3000 * (gs.wave / 5); // Reduced health
+      boss.hull = boss.maxHull;
+      boss.isBoss = true;
+      boss.aiType = 'boss_tactical'; // New AI type
+      boss.patrolAxis = 'y';
+      boss.patrolDir = 1;
+      
+      // Force position inside bounds to prevent sticking
+      if (boss.patrolAxis === 'x') {
+        boss.x = 800;
+        boss.y = 150;
+      } else {
+        boss.x = 1450;
+        boss.y = 450;
+      }
+
+      boss.fireCooldown = 0;
+      boss.weaponPhase = 0;
+      boss.phaseTimer = 0;
+      gs.enemies.push(boss);
+      
+      // Clear any remaining minions
+      gs.enemies = gs.enemies.filter(e => e.isBoss);
+    } else {
+      const initialEnemies = 3 + Math.floor(gs.wave / 2);
+      for (let i = 0; i < initialEnemies; i++) {
+        gs.enemies.push(spawnEnemy(room));
+      }
+    }
+  }
+
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: `JUMP COMPLETE: ${nodeType.toUpperCase()}`,
+      sub: `Entering Node ${gs.wave}`,
+      wave: gs.wave,
+      nodeType: nodeType
+    });
+  }
+}
+
+function gameOver(room, victory) {
+  room.gameState.gameOver = true;
+  const gs = room.gameState;
+  
+  if (room.broadcastToRoom) {
+    let totalKills = 0;
+    let totalGold = 0;
+    const playerNames = [];
+    const pveStats = [];
+    
+    // Combine active player stats with historical stats for departed players
+    const combinedStats = [];
+    
+    // Process active players
+    room.players.forEach((p, id) => {
+      totalGold += p.gold;
+      totalKills += (p.stats?.kills || 0);
+      playerNames.push(p.name || 'Pilot');
+      combinedStats.push({
+        id: id,
+        name: p.name || 'Pilot',
+        kills: p.stats?.kills || 0,
+        damage: Math.floor(p.stats?.damageDealt || 0),
+        gold: p.gold,
+        color: p.color,
+        isPvp: false
+      });
+    });
+
+    // Add historical stats for players who left
+    if (gs.historicalStats) {
+      Object.entries(gs.historicalStats).forEach(([id, stats]) => {
+        // Don't duplicate if they re-joined
+        if (!room.players.has(id)) {
+          totalKills += stats.kills;
+          totalGold += stats.gold;
+          combinedStats.push({
+            id: id,
+            name: stats.name + ' (Left)',
+            kills: stats.kills,
+            damage: stats.damage,
+            gold: stats.gold,
+            color: stats.color,
+            isPvp: false,
+            departed: true
+          });
+        }
+      });
+    }
+    
+    const timeElapsed = Math.floor((Date.now() - (room.createdAt || Date.now())) / 1000);
+    
+    room.broadcastToRoom({
+      type: 'gameover',
+      title: victory ? 'MISSION COMPLETE' : 'MISSION FAILED',
+      stats: `Survived ${gs.wave} nodes • ${totalGold} GOLD earned`,
+      pveStats: combinedStats,
+      pvpScores: gs.pvpScores || null
+    });
+    
+    // Record to global leaderboard
+    if (typeof global.addLeaderboardEntry === 'function') {
+      const isDevRun = Array.from(room.players.values()).some(p => p.isDev);
+      global.addLeaderboardEntry({
+        names: (isDevRun ? '[DEV] ' : '') + playerNames.join(' & '),
+        playerCount: room.players.size,
+        isCoop: !room.isSinglePlayer && room.players.size > 1,
+        waves: gs.wave,
+        kills: totalKills,
+        timeSeconds: timeElapsed,
+        victory,
+        isDev: isDevRun,
+        timestamp: Date.now()
+      });
+    }
+  }
+}
+
+function restartGame(room) {
+  const { createGameState } = require('./entityFactory');
+  room.gameState = createGameState();
+  room.gameState.gameStarted = true;
+  room.gameState.currentPhase = 'COMBAT';
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: 'MISSION RESTARTED',
+      sub: 'Protect the Mothership'
+    });
+  }
+}
+
+function triggerEndgameVoting(room) {
+  const gs = room.gameState;
+  gs.currentPhase = 'ENDGAME_VOTE';
+  gs.endgameVotes = {};
+  
+  if (room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'endgame_vote_start',
+      text: 'VICTORY!',
+      sub: 'Choose your final path:'
+    });
+  }
+}
+
+function triggerSuperUpgrade(room) {
+  const gs = room.gameState;
+  gs.currentPhase = 'SUPER_UPGRADE';
+  
+  const superOptions = [
+    { id: 'super_fire_rate', name: 'OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0 },
+    { id: 'super_homing', name: 'OMEGA TARGETING', desc: 'Max Homing and projectiles explode on impact.', cost: 0 },
+    { id: 'super_drones', name: 'DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0 },
+    { id: 'super_weapons', name: 'TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0 }
+  ];
+
+  // Give each player 2 random super options
+  room.players.forEach(p => {
+    const shuffled = [...superOptions].sort(() => Math.random() - 0.5);
+    p.pendingSuperUpgrades = shuffled.slice(0, 2);
+    
+    p.ws.send(JSON.stringify({
+      type: 'super_upgrade',
+      options: p.pendingSuperUpgrades
+    }));
+  });
+}
+
+module.exports = {
+  updateWave,
+  endWave,
+  startNextWave,
+  handleVoteNode,
+  gameOver,
+  restartGame,
+  triggerSuperUpgrade,
+  startSelectedNode,
+  triggerNavigation,
+  triggerUpgradePhase,
+  selectNode,
+  triggerEndgameVoting
+};
