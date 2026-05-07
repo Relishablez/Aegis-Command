@@ -8,10 +8,17 @@
     "dev": "nodemon server.js",
     "test": "echo \"No tests specified\" && exit 0"
   },
-  "keywords": ["game", "multiplayer", "space", "defense", "roguelike"],
+  "keywords": [
+    "game",
+    "multiplayer",
+    "space",
+    "defense",
+    "roguelike"
+  ],
   "author": "Aegis Command Team",
   "license": "MIT",
   "dependencies": {
+    "@azure/data-tables": "^13.3.2",
     "express": "^4.18.2",
     "ws": "^8.14.2"
   },
