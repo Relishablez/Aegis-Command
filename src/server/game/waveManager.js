@@ -103,7 +103,9 @@ function updateWave(room) {
   // Asteroid Spawning Logic
   if (gs.encounterType !== 'merchant' && gs.encounterType !== 'pvp') {
     const asteroidRate = Math.max(120, (600 - gs.wave * 30) / playerFactor);
-    if (gs.waveTimer % Math.floor(asteroidRate) === 0) {
+    if (!gs.lastAsteroidSpawn) gs.lastAsteroidSpawn = 0;
+    if (gs.waveTimer - gs.lastAsteroidSpawn >= asteroidRate) {
+      gs.lastAsteroidSpawn = gs.waveTimer;
       const { spawnAsteroid } = require('./entityFactory');
       const asteroid = spawnAsteroid(room);
       asteroid.speed *= (1 + (gs.wave - 1) * 0.03); // Asteroids get faster too
@@ -120,7 +122,6 @@ function updateWave(room) {
   // Check mission completion
   if (gs.waveTimer >= gs.waveDuration) {
     if (gs.encounterType !== 'boss') {
-      const { endWave } = require('./waveManager'); // Keep waveManager require here to avoid circular dependencies
       endWave(room, false);
     }
   }
