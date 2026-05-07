@@ -15,6 +15,7 @@ const {
 const ACHIEVEMENTS = require('../config/achievements');
 
 function updatePlayer(p, room) {
+  const gs = room.gameState;
   if (!p.alive) {
     if (p.lives <= 0) return; // Permanent death
     
@@ -195,7 +196,7 @@ function updatePlayer(p, room) {
           projectile.isLaser = true;
         }
         
-        room.gameState.projectiles.push(projectile);
+        gs.projectiles.push(projectile);
       }
     }
     p.fireCooldown = effectiveFireRate;
@@ -231,7 +232,7 @@ function updatePlayer(p, room) {
 
   // Track time alive
   p.stats.timeAlive++;
-  p.stats.maxWave = Math.max(p.stats.maxWave, room.gameState.wave);
+  p.stats.maxWave = Math.max(p.stats.maxWave, gs.wave);
   
   // Check achievements
   checkAchievements(p, room);
