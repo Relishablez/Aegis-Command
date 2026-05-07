@@ -266,12 +266,11 @@ function dist(p1, p2) {
 function getCurrentRenderState() {
     if (stateHistory.length < 2) return gameState;
     
-    const now = Date.now();
-    const renderTime = now - INTERPOLATION_DELAY;
+    const serverRenderTime = Date.now() + serverTimeOffset - INTERPOLATION_DELAY;
     
-    // Find two states to interpolate between
+    // Find two states to interpolate between using server timestamps
     let i = stateHistory.length - 1;
-    while (i > 0 && stateHistory[i].receiveTime > renderTime) {
+    while (i > 0 && stateHistory[i].state.t > serverRenderTime) {
         i--;
     }
     
@@ -280,11 +279,11 @@ function getCurrentRenderState() {
     
     if (!s1 || !s2) return s1 ? s1.state : gameState;
     
-    const duration = s2.receiveTime - s1.receiveTime;
-    if (duration === 0) return s1.state;
+    const duration = s2.state.t - s1.state.t;
+    if (duration <= 0) return s1.state;
     
-    // Clamp t between 0 and 1 to prevent overshoot/backtrack during lag
-    const t = Math.max(0, Math.min(1, (renderTime - s1.receiveTime) / duration));
+    // Clamp t between 0 and 1
+    const t = Math.max(0, Math.min(1, (serverRenderTime - s1.state.t) / duration));
     
     // Interpolate positions
     // Shallow copy the state to avoid expensive JSON operations
