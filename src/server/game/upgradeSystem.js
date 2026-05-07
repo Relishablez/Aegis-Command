@@ -121,6 +121,15 @@ function applyUpgrade(room, playerId, upgradeId) {
   player.multiShot = 1 + msLevel;
   player.bulletSize = 1 + bsLevel * 0.1;
   
+  // Set weapon type based on priority (Laser > Homing Missile > Default)
+  if (laserLevel > 0) {
+    player.weaponType = 'laser';
+  } else if (homingLevel > 0) {
+    player.weaponType = 'homing_missile';
+  } else {
+    player.weaponType = 'default';
+  }
+  
   // Weapons
   if (player.weaponType === 'laser') {
     player.fireRate *= 1.1;
@@ -200,6 +209,15 @@ function recalculatePlayerStats(player, gs) {
   player.damage = 1 + dmgLevel * 0.15;
   player.multiShot = 1 + msLevel;
   player.bulletSize = 1 + bsLevel * 0.1;
+  
+  // Set weapon type based on priority (Laser > Homing Missile > Default)
+  if (laserLevel > 0) {
+    player.weaponType = 'laser';
+  } else if (homingLevel > 0) {
+    player.weaponType = 'homing_missile';
+  } else {
+    player.weaponType = 'default';
+  }
   
   if (player.weaponType === 'laser') {
     player.fireRate *= 1.1;
