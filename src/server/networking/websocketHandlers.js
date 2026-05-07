@@ -13,7 +13,7 @@ function setupWebSocketHandlers(wss, roomManager) {
         
         // Create Room
         if (msg.type === 'create_room') {
-          const room = roomManager.createRoom(msg.password, msg.singlePlayer, msg.maxPlayers);
+          const room = roomManager.createRoom(msg.password, msg.singlePlayer, msg.maxPlayers, msg.settings);
           
           // Automatically join the creator
           playerId = 'player_' + Math.random().toString(36).substr(2, 9);
@@ -39,6 +39,7 @@ function setupWebSocketHandlers(wss, roomManager) {
             if (msg.singlePlayer) {
               room.gameState.gameStarted = true;
               room.gameRunning = true;
+              room.startTime = Date.now();
             } else {
               room.gameState.gameStarted = false; // Wait for host to start
               room.gameRunning = false;
@@ -211,6 +212,7 @@ function setupWebSocketHandlers(wss, roomManager) {
             const { startSelectedNode } = require('../game/waveManager');
             currentRoom.gameState.gameStarted = true;
             currentRoom.gameRunning = true;
+            currentRoom.startTime = Date.now();
             startSelectedNode(currentRoom, 'defense');
             roomManager.broadcastToRoom(currentRoom, {
               type: 'game_started'
