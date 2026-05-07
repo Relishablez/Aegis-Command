@@ -12,6 +12,8 @@ const {
 } = require('../config/constants');
 const { getDifficulty } = require('../utils/helpers');
 
+let nextEntityId = 1;
+
 function spawnPlayer(id, playerIndex, mothership) {
   return {
     id,
@@ -90,6 +92,7 @@ function spawnEnemy(room) {
   const totalScale = playerScale * hostScale;
   
   return {
+    id: nextEntityId++,
     x, y,
     radius: isDiamond ? ENEMY.ELITE_RADIUS : ENEMY.FIGHTER_RADIUS,
     speed: diff.enemySpeed * (0.8 + Math.random() * 0.4),
@@ -122,6 +125,7 @@ function spawnAsteroid(room) {
   }
   
   return {
+    id: nextEntityId++,
     x, y,
     radius: ASTEROID.RADIUS,
     verts,
@@ -135,6 +139,7 @@ function spawnAsteroid(room) {
 
 function spawnProjectile(x, y, angle, friendly, speed = PROJECTILE.SPEED) {
   return {
+    id: nextEntityId++,
     x, y,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
@@ -155,6 +160,7 @@ function spawnProjectile(x, y, angle, friendly, speed = PROJECTILE.SPEED) {
 function spawnPickup(x, y, type = 'gold') {
   // type can be 'gold', 'health', 'rapidFire', 'invincible', 'doubleGold'
   return {
+    id: nextEntityId++,
     x, y,
     type,
     radius: PICKUP.RADIUS,
@@ -168,6 +174,7 @@ function spawnDrone(mothership) {
   const angle = Math.random() * Math.PI * 2;
   const dist = 80 + Math.random() * 40;
   return {
+    id: nextEntityId++,
     x: mothership.x + Math.cos(angle) * dist,
     y: mothership.y + Math.sin(angle) * dist,
     radius: DRONE.RADIUS,
@@ -197,6 +204,8 @@ function spawnMerchant(x, y, upgrade) {
     upgrade: chosen
   };
 }
+
+
 
 function createGameState() {
   return {
