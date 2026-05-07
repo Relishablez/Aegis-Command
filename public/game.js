@@ -193,8 +193,12 @@ function handleMessage(msg) {
 
 // Room management
 function createRoom() {
+    const playerName = document.getElementById('playerName').value.trim();
+    if (!playerName) {
+        alert("You MUST enter a name to create a room.");
+        return;
+    }
     const password = document.getElementById('roomPassword').value;
-    const playerName = document.getElementById('playerName').value || 'Host';
     const maxPlayersInput = document.getElementById('roomMaxPlayers');
     const maxPlayers = maxPlayersInput ? parseInt(maxPlayersInput.value, 10) : 4;
     
@@ -218,7 +222,12 @@ function createRoom() {
 
 function joinRoom() {
     const roomCodeInput = document.getElementById('roomCode').value.toUpperCase();
-    const playerName = document.getElementById('playerName').value || 'Anonymous';
+    const playerName = document.getElementById('playerName').value.trim();
+    
+    if (!playerName) {
+        alert("You MUST enter a name to join a room.");
+        return;
+    }
     const password = document.getElementById('roomPassword').value;
     
     if (roomCodeInput.length !== 4) {
@@ -1092,7 +1101,7 @@ function updateUI() {
         const jumpPanel = document.getElementById('jumpPanel') || createJumpPanel();
         const distToMothership = Math.hypot(gameState.m.x - player.x, gameState.m.y - player.y);
         
-        if (gameState.encounterType === 'merchant' && distToMothership < 150) {
+        if (gameState.w && gameState.w.encounterType === 'merchant' && distToMothership < 150) {
             jumpPanel.classList.remove('hidden');
             updateJumpUI();
         } else {
@@ -1615,7 +1624,11 @@ function backToLobby() {
 }
 
 function playSinglePlayer() {
-    const name = document.getElementById('playerName').value || 'Pilot';
+    const name = document.getElementById('playerName').value.trim();
+    if (!name) {
+        alert("You MUST enter a name to play.");
+        return;
+    }
     connectWebSocket();
     
     // Wait for connection before sending create_room
@@ -1688,17 +1701,23 @@ function setupInputHandlers() {
     });
     
     // Send input updates
+    let lastInputString = "";
     setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN && gameState && !gameState.waitingForUpgrade) {
-            ws.send(JSON.stringify({
+            const currentInput = {
                 type: 'input',
                 keys: keys,
                 mouseX: mouseX,
                 mouseY: mouseY,
                 mouseDown: mouseDown
-            }));
+            };
+            const currentInputString = JSON.stringify(currentInput);
+            if (currentInputString !== lastInputString) {
+                ws.send(currentInputString);
+                lastInputString = currentInputString;
+            }
         }
-    }, 1000 / 30); // Match server broadcast rate (30 FPS)
+    }, 1000 / 60); // Check 60 times a sec, but only send if dirty
 }
 
 // Initialize
