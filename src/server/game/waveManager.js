@@ -8,7 +8,14 @@ const {
 
 function updateWave(room) {
   const gs = room.gameState;
-  if (!gs || gs.gameOver || !gs.gameStarted) return;
+  if (!gs) return;
+  if (gs.gameOver || !gs.gameStarted) {
+    // Log every 5 seconds if game is stuck
+    if (Date.now() % 5000 < 20) {
+      console.log(`[WAVE] Waiting: gameStarted=${gs.gameStarted}, gameOver=${gs.gameOver}, phase=${gs.currentPhase}`);
+    }
+    return;
+  }
 
   // PROCESS TIMERS (Real-time based)
   const now = Date.now();
