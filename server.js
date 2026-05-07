@@ -43,11 +43,28 @@ const roomManager = new RoomManager();
 
 // Global in-memory leaderboard (max 100 entries, FIFO)
 const leaderboard = [];
-global.addLeaderboardEntry = (entry) => {
+global.addLeaderboardEntry = async (entry) => {
   leaderboard.push(entry);
   if (leaderboard.length > 100) leaderboard.shift();
+  if (global.azureDbActive) {
+    await require('./src/server/db/azureDb').saveScore(entry);
+  }
 };
 global.getRoomManager = () => roomManager;
+
+// Initialize Azure DB
+const azureDb = require('./src/server/db/azureDb');
+azureDb.initDB().then(async (success) => {
+  if (success) {
+    global.azureDbActive = true;
+    const scores = await azureDb.getScores();
+    if (scores && scores.length > 0) {
+      leaderboard.push(...scores);
+      leaderboard.sort((a,b) => b.waves - a.waves);
+      if (leaderboard.length > 100) leaderboard.length = 100;
+    }
+  }
+});
 
 // Setup WebSocket handlers
 setupWebSocketHandlers(wss, roomManager);
