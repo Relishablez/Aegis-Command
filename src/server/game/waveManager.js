@@ -22,12 +22,16 @@ function updateWave(room) {
   } else if (gs.currentPhase === 'UPGRADE') {
     gs.upgradeTimer += deltaSeconds * 60;
     const timeLeft = Math.max(0, Math.ceil((UPGRADE_MAX_TIME - gs.upgradeTimer) / 60));
-    if (room.broadcastToRoom) {
-      room.broadcastToRoom({
-        type: 'upgrade_timer_update',
-        timeLeft: timeLeft
-      });
-    }      
+    if (timeLeft !== gs.lastBroadcastTimeLeft) {
+      gs.lastBroadcastTimeLeft = timeLeft;
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({
+          type: 'upgrade_timer_update',
+          timeLeft: timeLeft
+        });
+      }
+    }
+      
     // Re-sync upgrade menu every 3 seconds for players who haven't picked
     if (Math.floor(gs.upgradeTimer) % 180 === 0) {
       room.players.forEach((player, playerId) => {
