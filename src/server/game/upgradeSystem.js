@@ -1,7 +1,7 @@
 const UPGRADES = require('../config/upgrades');
 const { spawnDrone } = require('./entityFactory');
 
-function applyUpgrade(room, playerId, upgradeId) {
+function applyUpgrade(room, playerId, upgradeId, force = false) {
   const gs = room.gameState;
   const player = room.players.get(playerId);
   if (!player) return false;
@@ -15,12 +15,12 @@ function applyUpgrade(room, playerId, upgradeId) {
   }
   
   const currentLevel = gs.playerUpgrades[playerId][upgradeId] || 0;
-  if (currentLevel >= upgrade.max) return false;
+  if (!force && currentLevel >= upgrade.max) return false;
   
-  const cost = upgrade.costs[currentLevel];
-  if (player.gold < cost) return false;
+  const cost = upgrade.costs[currentLevel] || 0;
+  if (!force && player.gold < cost) return false;
   
-  player.gold -= cost;
+  if (!force) player.gold -= cost;
   gs.playerUpgrades[playerId][upgradeId] = currentLevel + 1;
   
   // Mark player as ready for next wave
@@ -107,58 +107,14 @@ function applyUpgrade(room, playerId, upgradeId) {
     gs.teamPickupRange = (gs.teamPickupRange || 0) + 25;
   }
   
-  // Recalculate stats based on level
-  const frLevel = gs.playerUpgrades[playerId]['fire_rate'] || 0;
-  const dmgLevel = gs.playerUpgrades[playerId]['damage'] || 0;
-  const msLevel = gs.playerUpgrades[playerId]['multishot'] || 0;
-  const bsLevel = gs.playerUpgrades[playerId]['bullet_size'] || 0;
-  const laserLevel = gs.playerUpgrades[playerId]['laser'] || 0;
-  const homingLevel = gs.playerUpgrades[playerId]['homing_missile'] || 0;
-  
-  // Base
-  player.fireRate = Math.max(2, 8 - frLevel * 0.7);
-  player.damage = 1 + dmgLevel * 0.15;
-  player.multiShot = 1 + msLevel;
-  player.bulletSize = 1 + bsLevel * 0.1;
-  
-  // Set weapon type based on priority (Laser > Homing Missile > Default)
-  if (laserLevel > 0) {
-    player.weaponType = 'laser';
-  } else if (homingLevel > 0) {
-    player.weaponType = 'homing_missile';
-  } else {
-    player.weaponType = 'default';
-  }
-  
-  // Weapons
-  if (player.weaponType === 'laser') {
-    player.fireRate *= 1.1;
-    player.bulletSize = 0.15 + (laserLevel * 0.1);
-    player.damage *= 1.8;
-    player.laserRange = 500 + (laserLevel * 80);
-  } else if (player.weaponType === 'homing_missile') {
-    player.damage *= 1.5;
-    player.fireRate *= 1.4;
+  // Update weapon preference if a weapon was bought
+  if (['laser', 'homing_missile'].includes(upgradeId)) {
+    player.weaponType = upgradeId;
   }
 
-  // Super Upgrades
-  if (player.superFireRateActive) {
-    player.fireRate *= 0.5;
-    player.damage *= 2;
-  }
-  if (player.superWeaponsActive) {
-    player.multiShot *= 3;
-    player.bulletSize *= 3;
-  }
-  if (player.superHomingActive) {
-    player.homing = 100;
-  }
+  // Recalculate all stats to keep them consistent
+  recalculatePlayerStats(player, gs);
 
-  // Merchant Upgrades
-  if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
-  if (player.merchantDamage) player.damage *= player.merchantDamage;
-  if (player.merchantFireRate) player.fireRate *= player.merchantFireRate;
-  
   return true;
 }
 
@@ -210,13 +166,11 @@ function recalculatePlayerStats(player, gs) {
   player.multiShot = 1 + msLevel;
   player.bulletSize = 1 + bsLevel * 0.1;
   
-  // Set weapon type based on priority (Laser > Homing Missile > Default)
-  if (laserLevel > 0) {
-    player.weaponType = 'laser';
-  } else if (homingLevel > 0) {
-    player.weaponType = 'homing_missile';
-  } else {
-    player.weaponType = 'default';
+  // Default weapon type if none set
+  if (!player.weaponType) {
+      if (laserLevel > 0) player.weaponType = 'laser';
+      else if (homingLevel > 0) player.weaponType = 'homing_missile';
+      else player.weaponType = 'default';
   }
   
   if (player.weaponType === 'laser') {
@@ -244,6 +198,10 @@ function recalculatePlayerStats(player, gs) {
   if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
   if (player.merchantDamage) player.damage *= player.merchantDamage;
   if (player.merchantFireRate) player.fireRate *= player.merchantFireRate;
+
+  player.ramSpikes = upgrades['ram_spikes'] || 0;
+  player.shrapnel = upgrades['shrapnel'] || 0;
+  player.chainLightning = upgrades['chain_lightning'] || 0;
 }
 
 module.exports = {
