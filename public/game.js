@@ -20,6 +20,7 @@ let stateHistory = [];
 const INTERPOLATION_DELAY = 100;
 let renderState = null;
 let serverTimeOffset = 0;
+let ping = 0;
 let lastFrameTime = 0;
 const MAX_FPS = 160;
 const FRAME_MIN_TIME = 1000 / MAX_FPS;
@@ -285,6 +286,9 @@ function getCurrentRenderState() {
     // Clamp t between 0 and 1
     const t = Math.max(0, Math.min(1, (serverRenderTime - s1.state.t) / duration));
     
+    // Debug variables attached to window for monitor
+    window._debugInterp = { t: t.toFixed(2), buf: stateHistory.length, offset: serverTimeOffset };
+    
     // Interpolate positions
     // Shallow copy the state to avoid expensive JSON operations
     // We only need to interpolate specific values
@@ -330,7 +334,7 @@ function getCurrentRenderState() {
     // Interpolate enemies by ID
     if (s1.state.e && s2.state.e) {
         interpolated.e = s1.state.e.map(e1 => {
-            const e2 = s2.state.e.find(e => e.id === e1.id) || s2.state.e.find((e, idx) => idx === s1.state.e.indexOf(e1)); // fallback to index if no ID
+            const e2 = s2.state.e.find(e => e.id === e1.id);
             if (e2) {
                 return {
                     ...e1,
@@ -1403,6 +1407,12 @@ function updateUI() {
                      (gameState.a?.length || 0) + 
                      (gameState.b?.length || 0);
         debugEntities.textContent = count;
+    }
+    
+    const debugPing = document.getElementById('debugPing');
+    if (debugPing) {
+        const interp = window._debugInterp || { t: 0, buf: 0, offset: 0 };
+        debugPing.textContent = `${ping}ms (t:${interp.t} buf:${interp.buf})`;
     }
     
     // Simple FPS calculation
