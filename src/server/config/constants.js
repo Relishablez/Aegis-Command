@@ -30,7 +30,7 @@ module.exports = {
     RADIUS: 12,
     SPEED: 2.8,
     HULL: 100,
-    FIRE_RATE: 12
+    FIRE_RATE: 20
   },
   
   MOTHERSHIP: {
@@ -60,13 +60,13 @@ module.exports = {
   
   PICKUP: {
     RADIUS: 12,
-    LIFE: 600
+    LIFE: 36000
   },
   
   DRONE: {
     RADIUS: 10,
     ORBIT_SPEED: 0.02,
-    FIRE_RATE: 15,
+    FIRE_RATE: 20,
     RANGE: 250
   }
 };
