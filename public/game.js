@@ -374,9 +374,24 @@ function connectWebSocket() {
     
     ws.onclose = () => {
         console.log('Disconnected from server');
+        if (window.pingInterval) clearInterval(window.pingInterval);
+        
         const overlay = document.getElementById('reconnectOverlay');
         if (overlay) overlay.style.display = 'flex';
-        setTimeout(() => connectWebSocket(), 3000);
+        
+        // Try to reconnect in the background
+        setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+                connectWebSocket();
+            }
+        }, 3000);
+        
+        // Auto kick to main menu after 60s if not connected
+        setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+                location.href = '/';
+            }
+        }, 60000);
     };
     
     ws.onerror = (error) => {
@@ -565,6 +580,7 @@ function handlePong(msg) {
     // msg.serverTime is when the server processed our ping
     serverTimeOffset = msg.serverTime - (now - latency / 2);
     
+    ping = latency;
     const debugPing = document.getElementById('debugPing');
     if (debugPing) debugPing.textContent = latency + 'ms';
 }
@@ -1415,18 +1431,24 @@ function drawGame(gs) {
         
         const size = 3 * (bullet.bulletSize || 1);
         
+        let pColor = null;
+        if (bullet.ownerId) {
+            const owner = gs.p?.find(p => p.id === bullet.ownerId);
+            if (owner) pColor = owner.color;
+        }
+        
         // Optimization: Skip shadows for regular small bullets to save CPU/GPU
         if (size > 5 || bullet.type === 'laser' || bullet.type === 'homing_missile') {
             if (bullet.friendly) {
-                ctx.fillStyle = '#f39c12';
-                ctx.shadowColor = '#f39c12';
+                ctx.fillStyle = pColor || '#f39c12';
+                ctx.shadowColor = pColor || '#f39c12';
             } else {
                 ctx.fillStyle = '#e74c3c';
                 ctx.shadowColor = '#e74c3c';
             }
             ctx.shadowBlur = 5;
         } else {
-            ctx.fillStyle = bullet.friendly ? '#f39c12' : '#e74c3c';
+            ctx.fillStyle = bullet.friendly ? (pColor || '#f39c12') : '#e74c3c';
             ctx.shadowBlur = 0;
         }
         
@@ -1549,13 +1571,16 @@ function drawGame(gs) {
             ctx.rotate(bullet.angle);
             
             // Outer glow
-            ctx.strokeStyle = `rgba(52, 152, 219, ${alpha * 0.4})`;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.4;
+            ctx.strokeStyle = pColor || '#3498db';
             ctx.lineWidth = width * 2.5;
             ctx.lineCap = 'round';
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(range, 0);
             ctx.stroke();
+            ctx.restore();
             
             // Core beam
             ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
@@ -1597,7 +1622,7 @@ function drawGame(gs) {
             ctx.restore();
             return;
         } else if (bullet.type === 'orbital') {
-            const alpha = bullet.life / 20;
+            const alpha = Math.max(0, Math.min(1, bullet.life / 20));
             const radius = bullet.radius || 150;
             
             ctx.restore(); // use global coordinates
@@ -1609,7 +1634,7 @@ function drawGame(gs) {
             ctx.strokeStyle = `rgba(231, 76, 60, ${alpha})`;
             ctx.lineWidth = 10 * alpha;
             ctx.beginPath();
-            ctx.arc(0, 0, radius * (1 - alpha), 0, Math.PI * 2);
+            ctx.arc(0, 0, Math.max(0, radius * (1 - alpha)), 0, Math.PI * 2);
             ctx.stroke();
             
             ctx.fillStyle = `rgba(231, 76, 60, ${alpha * 0.3})`;
@@ -2135,7 +2160,7 @@ function handleUpgradeMenu(msg) {
     if (lastUpgradeMsg) {
         const sameOptions = JSON.stringify(msg.options) === JSON.stringify(lastUpgradeMsg.options);
         const sameGold = msg.gold === lastUpgradeMsg.gold;
-        const samePinned = msg.pinnedId === lastUpgradeMsg.pinnedId;
+        const samePinned = JSON.stringify(msg.pinnedIds || []) === JSON.stringify(lastUpgradeMsg.pinnedIds || []);
         if (sameOptions && sameGold && samePinned && !upgradeMenu.classList.contains('hidden') && optionsContainer.children.length > 0) {
             return; // Already rendering this exact state
         }
@@ -2149,7 +2174,8 @@ function handleUpgradeMenu(msg) {
     msg.options?.forEach(option => {
         const div = document.createElement('div');
         div.className = 'upgrade-option';
-        if (msg.pinnedId === option.id) {
+        const isPinned = msg.pinnedIds && msg.pinnedIds.includes(option.id);
+        if (isPinned) {
             div.style.border = '2px solid #f1c40f';
             div.style.boxShadow = '0 0 15px rgba(241, 196, 15, 0.3)';
             div.style.background = 'rgba(241, 196, 15, 0.05)';
@@ -2173,7 +2199,7 @@ function handleUpgradeMenu(msg) {
             <div class="upgrade-cost" style="color: ${canAfford ? '#e67e22' : '#e74c3c'}">Cost: ${cost} GOLD</div>
             <div style="display: flex; gap: 10px; margin-top: 10px;">
                 <button class="btn btn-sm buy-btn" style="flex: 1; padding: 5px; font-size: 12px; ${!canAfford ? 'opacity: 0.5; pointer-events: none;' : ''}" onclick="event.stopPropagation(); selectUpgrade('${option.id}')">Buy</button>
-                <button class="btn btn-sm btn-secondary pin-btn" style="flex: 1; padding: 5px; font-size: 12px; ${msg.pinnedId === option.id ? 'border-color: #f1c40f; color: #f1c40f;' : ''}" onclick="event.stopPropagation(); pinUpgrade('${option.id}')">${msg.pinnedId === option.id ? '★ Pinned' : '☆ Pin'}</button>
+                <button class="btn btn-sm btn-secondary pin-btn" style="flex: 1; padding: 5px; font-size: 12px; ${isPinned ? 'border-color: #f1c40f; color: #f1c40f;' : ''}" onclick="event.stopPropagation(); pinUpgrade('${option.id}')">${isPinned ? '★ Pinned' : '☆ Pin'}</button>
             </div>
         `;
         
@@ -2318,7 +2344,7 @@ function handleUpgradePinned(msg) {
     // Force a re-render of the menu with the new pinned status
     // We need to keep the options from the previous message
     const msgCopy = Object.assign({}, lastUpgradeMsg);
-    msgCopy.pinnedId = msg.pinnedId;
+    msgCopy.pinnedIds = msg.pinnedIds;
     lastUpgradeMsg = null; // Force rebuild
     handleUpgradeMenu(msgCopy);
 }
