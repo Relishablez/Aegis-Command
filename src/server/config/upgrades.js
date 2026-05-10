@@ -3,11 +3,11 @@ module.exports = [
   // Player Ship Upgrades (12 options)
   { 
     id: 'fire_rate', 
-    name: 'Rapid Fire', 
+    name: 'Rapid Fire (Player)', 
     type: 'player', 
     max: 10, 
     costs: [100,150,200,250,300,350,400,450,500,550],
-    description: 'Increase fire rate'
+    description: 'Increases ship fire rate by reducing weapon cooldown between shots.'
   },
   { 
     id: 'speed', 
@@ -59,11 +59,11 @@ module.exports = [
   },
   { 
     id: 'laser', 
-    name: 'Pulse Laser', 
+    name: 'Laser Beam', 
     type: 'player', 
     max: 5, 
     costs: [1000, 1500, 2000, 2500, 3000],
-    description: 'High-frequency energy pulses. Upgrading increases damage, thickness, and range.'
+    description: 'Continuous energy beam. Upgrading increases damage, thickness, and range. Hitscan accuracy improves with tracking upgrades.'
   },
   { 
     id: 'pulse_wave', 
@@ -113,6 +113,14 @@ module.exports = [
     costs: [150,200,250,300,350,400,450,500,550,600],
     description: 'Larger, more visible projectiles'
   },
+  { 
+    id: 'blackhole_rift', 
+    name: 'Blackhole Rift Anchor', 
+    type: 'player', 
+    max: 10, 
+    costs: [1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000],
+    description: 'OMEGA WEAPON: Deploy a gravity rift when standing still. Sucks in small enemies and slows larger ones. Trajectory bending at edges.'
+  },
   
   // Mothership Upgrades (8 options)
   { 
@@ -148,12 +156,20 @@ module.exports = [
     description: 'Deploy orbital combat drones'
   },
   { 
+    id: 'support_drone', 
+    name: 'Support Drone', 
+    type: 'mothership', 
+    max: 10, 
+    costs: [200,300,400,500,600,700,800,900,1000,1100],
+    description: 'Deploys a Support Drone that collects nearby powerups for the team and provides passive healing. Each drone restores 1% of Max Hull to all players and the Mothership every second (capped at 10% total healing per second).'
+  },
+  { 
     id: 'drone_speed', 
-    name: 'Drone Speed', 
+    name: 'Overclocked Relays (Drones)', 
     type: 'mothership', 
     max: 10, 
     costs: [150,200,250,300,350,400,450,500,550,600],
-    description: 'Faster drone fire rate'
+    description: 'Increases fire rate and orbital speed for all drone units.'
   },
   { 
     id: 'drone_damage', 
@@ -181,14 +197,7 @@ module.exports = [
   },
   
   // Special Upgrades (5 options)
-  { 
-    id: 'reroll', 
-    name: 'Reroll Upgrades', 
-    type: 'special', 
-    max: 10, 
-    costs: [100,150,200,250,300,350,400,450,500,550],
-    description: 'Refresh upgrade choices (consumable)'
-  },
+
   { 
     id: 'xp_boost', 
     name: 'Gold Boost', 
@@ -205,14 +214,7 @@ module.exports = [
     costs: [250,350,450,550,650,750,850,950,1050,1150],
     description: 'Increased pickup drop rate from destroyed enemies'
   },
-  { 
-    id: 'crit_chance', 
-    name: 'Critical Hits', 
-    type: 'special', 
-    max: 10, 
-    costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Chance for double damage'
-  },
+
   { 
     id: 'ram_spikes', 
     name: 'Melee Spikes', 
@@ -227,7 +229,7 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Projectiles split into smaller fragments on impact'
+    description: 'Projectiles split into (Level + 1) fragments on impact. SYNERGY: Unlocks Fractal Shrapnel at the Merchant.'
   },
   { 
     id: 'chain_lightning', 
@@ -235,7 +237,7 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Shots arc chain lightning to a second nearby enemy on hit'
+    description: 'Shots arc chain lightning to nearby enemies. Each level increases arc range and the number of potential targets (up to 5 targets at max level).'
   },
   { 
     id: 'mines', 
@@ -243,6 +245,50 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Deploy stationary mines. Synergizes with Homing upgrades to seek enemies.'
+    description: 'Deploy stationary mines. Upgrading reduces cooldown. At level 2+, mines gain intrinsic tracking. Synergizes with Tracking upgrades to seek enemies even faster.'
+  },
+  
+  // OMEGA Upgrades (Boss Drops)
+  {
+    id: 'super_fire_rate',
+    name: 'OMEGA: OVERCLOCK CORE',
+    type: 'omega',
+    max: 1,
+    costs: [0],
+    description: 'Double your current Fire Rate and +100% Damage.'
+  },
+  {
+    id: 'super_homing',
+    name: 'OMEGA: TARGETING MATRIX',
+    type: 'omega',
+    max: 1,
+    costs: [0],
+    description: 'Max Tracking and projectiles explode on impact.'
+  },
+  {
+    id: 'super_drones',
+    name: 'OMEGA: DRONE SWARM',
+    type: 'omega',
+    max: 1,
+    costs: [0],
+    description: 'Double your current Drone count and triple their fire rate.'
+  },
+  {
+    id: 'super_weapons',
+    name: 'OMEGA: TITAN BATTERY',
+    type: 'omega',
+    max: 1,
+    costs: [0],
+    description: 'Triple projectiles per shot and +200% Bullet Size.'
+  },
+  
+  // Merchant Specific / Special Upgrades
+  {
+    id: 'fractal_shrapnel',
+    name: 'Fractal Shrapnel',
+    type: 'merchant',
+    max: 1,
+    costs: [1500],
+    description: 'Shrapnel fragments now also split into more fragments on impact! (Requires Shrapnel Rounds)'
   }
 ];
