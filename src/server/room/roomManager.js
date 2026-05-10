@@ -1,310 +1,604 @@
+const { 
+  MAX_PLAYERS_PER_ROOM, 
+  ROOM_INACTIVITY_TIMEOUT 
+} = require('../config/constants');
+const { 
+  generateRoomCode, 
+  hashPassword, 
+  verifyPassword 
+} = require('../utils/helpers');
+const { createGameState } = require('../game/entityFactory');
+const { applyUpgrade, generateUpgradeOptions, rerollUpgrades } = require('../game/upgradeSystem');
+const { endWave, startNextWave, gameOver, restartGame, selectNode, handleVoteNode } = require('../game/waveManager');
 const UPGRADES = require('../config/upgrades');
-const { generateUpgradeOptions } = require('../game/upgradeSystem');
-const { verifyPassword } = require('../utils/helpers');
 
-function setupWebSocketHandlers(wss, roomManager) {
-  wss.on('connection', (ws, req) => {
-    console.log('New WebSocket connection');
-    let currentRoom = null;
-    let playerId = null;
+class RoomManager {
+  constructor() {
+    this.rooms = new Map(); // roomCode -> room object
+  }
 
-    ws.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data);
+  createRoom(password = null, isSinglePlayer = false, maxPlayers = MAX_PLAYERS_PER_ROOM, settings = null) {
+    const code = generateRoomCode();
+    
+    // Ensure uniqueness
+    if (this.rooms.has(code)) {
+      return this.createRoom(password, isSinglePlayer, maxPlayers, settings);
+    }
+    
+    const roomSettings = settings || {
+      waveDuration: 60,
+      damageMultiplier: 1.0,
+      goldMultiplier: 1.0
+    };
+    
+    const room = {
+      code,
+      passwordHash: password ? hashPassword(password) : null,
+      isPrivate: !!password,
+      isSinglePlayer: !!isSinglePlayer,
+      maxPlayers: Math.min(Math.max(1, maxPlayers), 8), // clamp between 1 and 8
+      settings: roomSettings,
+      players: new Map(),
+      ownerId: null,
+      gameState: createGameState(),
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+      gameRunning: false,
+      broadcastToRoom: (msg) => this.broadcastToRoom(room, msg)
+    };
+    
+    this.rooms.set(code, room);
+    console.log(`Room ${code} created${password ? ' (password protected)' : ''} [Max: ${room.maxPlayers}]`);
+    return room;
+  }
 
-        // Create Room
-        if (msg.type === 'create_room') {
-          const room = roomManager.createRoom(msg.password, msg.singlePlayer, msg.maxPlayers, msg.settings);
+  getRoom(code) {
+    return this.rooms.get(code.toUpperCase());
+  }
 
-          // Sanitize and validate player name
-          let sanitizedName = (msg.playerName || 'Host').trim().substring(0, 26);
-          playerId = 'player_' + Math.random().toString(36).substr(2, 9);
-          if (roomManager.addPlayerToRoom(room, playerId, ws, { name: sanitizedName })) {
-            currentRoom = room;
-            room.ownerId = playerId; // Set the room owner to the creator
-
-            // Send room created success with player info
-            ws.send(JSON.stringify({
-              type: 'room_created',
-              roomCode: room.code,
-              playerId: playerId,
-              isPrivate: room.isPrivate,
-              isSinglePlayer: room.isSinglePlayer,
-              shareableLink: `${req.headers.origin || ''}/?room=${room.code}`,
-              players: [{
-                id: playerId,
-                name: sanitizedName,
-                color: room.players.get(playerId).color,
-                isDev: room.players.get(playerId).isDev || false
-              }]
-            }));
-
-            // Set game status
-            if (msg.singlePlayer) {
-              const { startSelectedNode } = require('../game/waveManager');
-              room.gameState.gameStarted = true;
-              room.gameRunning = true;
-              startSelectedNode(room, 'defense');
-            } else {
-              room.gameState.gameStarted = false; // Wait for host to start
-              room.gameRunning = false;
-            }
-          }
-          return;
+  deleteRoom(code) {
+    const room = this.rooms.get(code);
+    if (room) {
+      // Close all connections
+      room.players.forEach((player, id) => {
+        if (player.ws && player.ws.readyState === 1) { // WebSocket.OPEN
+          player.ws.close();
         }
+      });
+      this.rooms.delete(code);
+      console.log(`Room ${code} deleted`);
+    }
+  }
 
-        // Join Room
-        if (msg.type === 'join_room') {
-          const roomCode = msg.roomCode?.toUpperCase();
-          const room = roomManager.getRoom(roomCode);
+  cleanupInactiveRooms() {
+    const now = Date.now();
+    for (const [code, room] of this.rooms) {
+      if (room.players.size === 0 && now - room.lastActivity > ROOM_INACTIVITY_TIMEOUT) {
+        this.deleteRoom(code);
+      }
+    }
+  }
 
-          if (!room) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Room not found. Check the code and try again.'
-            }));
-            return;
+  addPlayerToRoom(room, playerId, ws, playerData = {}) {
+    if (room.players.size >= room.maxPlayers) {
+      return false;
+    }
+    
+    if (room.isSinglePlayer && room.players.size > 0) {
+      return false;
+    }
+
+    const { spawnPlayer } = require('../game/entityFactory');
+    const playerIndex = room.players.size;
+    const player = spawnPlayer(playerId, playerIndex, room.gameState.mothership);
+    
+    // Apply additional player data
+    Object.assign(player, playerData);
+    player.ws = ws;
+
+    // Handle DevMode naming and duplicate detection
+    let finalName = playerData.name || 'Pilot';
+    if (finalName.toLowerCase() === 'devmode') {
+      let devCount = 0;
+      room.players.forEach(p => {
+        if (p.name && p.name.includes('DevMode')) devCount++;
+      });
+      finalName = devCount === 0 ? 'DevMode' : `DevMode[${devCount}]`;
+      player.isDev = true;
+      console.log(`[SERVER] DevMode detected for player: ${finalName} (ID: ${playerId})`);
+    }
+    player.name = finalName;
+    
+    // Restore merchant upgrades if they re-joined
+    if (room.gameState.purchasedMerchantUpgrades) {
+      room.gameState.purchasedMerchantUpgrades.forEach(u => {
+        if (u.buyerName === finalName) {
+          if (u.id === 'hyper_drives') player.merchantSpeed = (player.merchantSpeed || 1.0) + 1.0;
+          if (u.id === 'homing_missiles') player.merchantHoming = true;
+          if (u.id === 'double_projectiles') player.merchantMultiShot = (player.merchantMultiShot || 1) * 2;
+          if (u.id === 'double_damage') player.merchantDamage = (player.merchantDamage || 1) * 2;
+          if (u.id === 'rate_of_fire') player.merchantFireRate = (player.merchantFireRate || 1) * 0.5;
+          if (u.id === 'chain_lightning') player.chainLightning = (player.chainLightning || 0) + 1;
+          if (u.id === 'shrapnel_burst') player.shrapnel = (player.shrapnel || 0) + 1;
+          if (u.id === 'cursed_relic') {
+            player.merchantDamage = (player.merchantDamage || 1) * 5;
+            player.merchantMultiShot = (player.merchantMultiShot || 1) + 5;
+            player.cursedDamageTaken = (player.cursedDamageTaken || 1) * 2;
           }
-
-          const { MAX_PLAYERS_PER_ROOM } = require('../config/constants');
-          if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: `Room is full (max ${MAX_PLAYERS_PER_ROOM} players).`
-            }));
-            return;
+          if (u.id === 'laser_weapon') {
+            player.weaponType = 'laser';
+            player.merchantLaser = (player.merchantLaser || 0) + 1;
           }
-
-          if (!verifyPassword(msg.password, room.passwordHash)) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Incorrect password.'
-            }));
-            return;
-          }
-
-          // Generate player ID
-          playerId = 'player_' + Math.random().toString(36).substr(2, 9);
-
-          // Sanitize and validate player name
-          let sanitizedName = (msg.playerName || `Player ${Math.floor(Math.random() * 1000)}`).trim().substring(0, 26);
-          
-          // Add player to room
-          if (roomManager.addPlayerToRoom(room, playerId, ws, { name: sanitizedName })) {
-            currentRoom = room;
-
-            // Send join success
-            ws.send(JSON.stringify({
-              type: 'room_joined',
-              roomCode: room.code,
-              playerId: playerId,
-              players: Array.from(room.players.values()).map(p => ({
-                id: p.id,
-                name: p.name || `Player ${p.id.slice(-4)}`,
-                color: p.color,
-                isDev: p.isDev || false
-              }))
-            }));
-
-            // Broadcast to other players
-            roomManager.broadcastToRoom(room, {
-              type: 'player_joined',
-              player: {
-                id: playerId,
-                name: sanitizedName,
-                color: room.players.get(playerId).color,
-                isDev: room.players.get(playerId).isDev || false
-              }
-            });
-
-            // If game already started, send game_started to the new player
-            if (room.gameState.gameStarted) {
-              ws.send(JSON.stringify({ type: 'game_started' }));
-            }
-          } else {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: room.isSinglePlayer ? 'This is a private single-player session.' : 'Room is full or unavailable.'
-            }));
-          }
-          return;
         }
+      });
+    }
+    
+    // Restore standard upgrades and session state if they rejoined
+    if (room.gameState.disconnectedPlayers && room.gameState.disconnectedPlayers[finalName]) {
+      const savedData = room.gameState.disconnectedPlayers[finalName];
+      player.gold = savedData.gold;
+      player.stats = savedData.stats;
+      player.lives = savedData.lives;
+      room.gameState.playerUpgrades[playerId] = savedData.upgrades || {};
+      
+      console.log(`[SERVER] Restored session for player: ${finalName}`);
+    } else {
+      room.gameState.playerUpgrades[playerId] = {};
+    }
+    
+    // Recalculate stats after applying all restorations
+    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+    recalculatePlayerStats(player, room.gameState);
+    
+    room.players.set(playerId, player);
+    room.lastActivity = Date.now();
+    
+    // Set first player as owner
+    if (!room.ownerId) {
+      room.ownerId = playerId;
+    }
+    
+    return true;
+  }
 
-        // Player input
-        if (msg.type === 'input') {
-          if (currentRoom && playerId) {
-            const player = currentRoom.players.get(playerId);
-            if (player) {
-              if (msg.keys) player.keys = msg.keys;
-              if (msg.mouseX !== undefined) player.mouseX = msg.mouseX;
-              if (msg.mouseY !== undefined) player.mouseY = msg.mouseY;
-              if (msg.mouseDown !== undefined) player.mouseDown = msg.mouseDown;
-            }
-          }
-          return;
+  removePlayerFromRoom(room, playerId) {
+    // Save historical stats and session data before deleting
+    const player = room.players.get(playerId);
+    if (player && room.gameState) {
+      room.gameState.historicalStats[playerId] = {
+        name: player.name || 'Pilot',
+        kills: player.stats?.kills || 0,
+        damage: Math.floor(player.stats?.damageDealt || 0),
+        gold: player.gold,
+        color: player.color,
+        leftMidGame: true
+      };
+      
+      if (!room.gameState.disconnectedPlayers) room.gameState.disconnectedPlayers = {};
+      room.gameState.disconnectedPlayers[player.name] = {
+        gold: player.gold,
+        stats: player.stats,
+        lives: player.lives,
+        upgrades: room.gameState.playerUpgrades[playerId] || {}
+      };
+    }
+    room.players.delete(playerId);
+    room.lastActivity = Date.now();
+    
+    // If owner leaves, assign new owner
+    if (room.ownerId === playerId && room.players.size > 0) {
+      room.ownerId = room.players.keys().next().value;
+    }
+    
+    // Delete room if empty
+    if (room.players.size === 0) {
+      setTimeout(() => {
+        if (room.players.size === 0) {
+          this.deleteRoom(room.code);
         }
+      }, ROOM_INACTIVITY_TIMEOUT);
+    }
+  }
 
-        // Upgrade selection
-        if (msg.type === 'upgrade_select') {
-          if (currentRoom && playerId) {
-            roomManager.handleUpgradeSelect(currentRoom, playerId, msg.upgradeId);
-          }
-          return;
-        }
+  getRoomList() {
+    return Array.from(this.rooms.values()).map(room => ({
+      code: room.code,
+      playerCount: room.players.size,
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
+      isPrivate: room.isPrivate,
+      gameRunning: room.gameRunning,
+      wave: room.gameState.wave
+    }));
+  }
 
-        // Reroll upgrades
-        if (msg.type === 'reroll_upgrades') {
-          if (currentRoom && playerId) {
-            roomManager.handleRerollUpgrades(currentRoom, playerId);
-          }
-          return;
-        }
+  broadcastToRoom(room, msg) {
+    const data = JSON.stringify(msg);
+    room.players.forEach(p => {
+      if (p.ws && p.ws.readyState === 1) { // WebSocket.OPEN
+        p.ws.send(data);
+      }
+    });
+  }
 
-        // Pin upgrade
-        if (msg.type === 'pin_upgrade') {
-          if (currentRoom && playerId) {
-            roomManager.handlePinUpgrade(currentRoom, playerId, msg.upgradeId);
-          }
-          return;
-        }
-
-        // Skip upgrade
-        if (msg.type === 'skip_upgrade') {
-          if (currentRoom && playerId) {
-            roomManager.handleSkipUpgrade(currentRoom, playerId);
-          }
-          return;
-        }
-
-        // Merchant Ready
-        if (msg.type === 'merchant_ready') {
-          if (currentRoom && playerId) {
-            roomManager.handleMerchantReady(currentRoom, playerId);
-          }
-          return;
-        }
-
-        // Super Upgrade Selection
-        if (msg.type === 'select_super_upgrade') {
-          if (currentRoom && playerId) {
-            roomManager.handleSelectSuperUpgrade(currentRoom, playerId, msg.upgradeId);
-          }
-          return;
-        }
-
-        // Vote for node
-        if (msg.type === 'vote_node') {
-          if (currentRoom && playerId) {
-            roomManager.handleVoteNode(currentRoom, playerId, msg.nodeId);
-          }
-          return;
-        }
-
-        // Vote for endgame
-        if (msg.type === 'vote_endgame') {
-          if (currentRoom && playerId) {
-            roomManager.handleVoteEndgame(currentRoom, playerId, msg.choice);
-          }
-          return;
-        }
-
-        // Restart game
-        if (msg.type === 'restart_game') {
-          if (currentRoom && currentRoom.players.get(playerId)) {
-            roomManager.handleRestartGame(currentRoom);
-          }
-          return;
-        }
-
-        // Toggle pause (Single Player only)
-        if (msg.type === 'toggle_pause') {
-          if (currentRoom && currentRoom.isSinglePlayer) {
-            currentRoom.gameState.isPaused = !currentRoom.gameState.isPaused;
-            roomManager.broadcastToRoom(currentRoom, {
-              type: 'pause_state',
-              isPaused: currentRoom.gameState.isPaused
-            });
-          }
-          return;
-        }
-
-        // Dev actions
-        if (msg.type === 'dev_action') {
-          if (currentRoom && playerId) {
-            roomManager.handleDevAction(currentRoom, playerId, msg.action, msg.data);
-          }
-          return;
-        }
-
-        // Ping for latency check
-        if (msg.type === 'ping') {
-          ws.send(JSON.stringify({
-            type: 'pong',
-            clientTime: msg.clientTime,
-            serverTime: Date.now()
-          }));
-          return;
-        }
-
-        // Start game (host only)
-        if (msg.type === 'start_game') {
-          if (currentRoom && playerId && currentRoom.ownerId === playerId) {
-            const { startSelectedNode } = require('../game/waveManager');
-            currentRoom.gameState.gameStarted = true;
-            currentRoom.gameRunning = true;
-            startSelectedNode(currentRoom, 'defense');
-            roomManager.broadcastToRoom(currentRoom, {
-              type: 'game_started'
-            });
-          }
-          return;
-        }
-
-        // Buy merchant upgrade
-        if (msg.type === 'buy_merchant') {
-          if (currentRoom && playerId) {
-            roomManager.handleBuyMerchant(currentRoom, playerId, msg.merchantId);
-          }
-          return;
-        }
-
-        // Get Compendium
-        if (msg.type === 'get_compendium') {
-          ws.send(JSON.stringify({
-            type: 'compendium_data',
-            upgrades: UPGRADES
-          }));
-          return;
-        }
-
-      } catch (error) {
-        console.error('WebSocket message error:', error);
-        ws.send(JSON.stringify({
-          type: 'error',
-          message: 'Invalid message format'
+  handleUpgradeSelect(room, playerId, upgradeId) {
+    if (applyUpgrade(room, playerId, upgradeId)) {
+      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
+      const player = room.players.get(playerId);
+      if (player) {
+        player.ws.send(JSON.stringify({
+          type: 'upgrade_applied',
+          levels: playerUpgrades,
+          gold: player.gold
         }));
+        
+        player.upgradeReady = true;
+        player.pendingUpgrades = null; // Clear pending upgrades after purchase
+        
+        // Clear pin if this was the pinned upgrade
+        if (player.pinnedUpgradeId === upgradeId) {
+          player.pinnedUpgradeId = null;
+        }
+      }
+      
+      // Check if all players are ready
+      const allReady = Array.from(room.players.values()).every(p => p.upgradeReady);
+      if (allReady) {
+        setTimeout(() => {
+          startNextWave(room);
+        }, 1000);
+      }
+    }
+  }
+
+  handlePinUpgrade(room, playerId, upgradeId) {
+    const player = room.players.get(playerId);
+    if (player) {
+      if (player.pinnedUpgradeId === upgradeId) {
+        player.pinnedUpgradeId = null;
+      } else {
+        player.pinnedUpgradeId = upgradeId;
+      }
+      player.ws.send(JSON.stringify({
+        type: 'upgrade_pinned',
+        pinnedId: player.pinnedUpgradeId
+      }));
+    }
+  }
+
+  handleSkipUpgrade(room, playerId) {
+    const player = room.players.get(playerId);
+    if (player) {
+      player.upgradeReady = true;
+      player.pendingUpgrades = null; // Clear pending upgrades after skip
+      player.ws.send(JSON.stringify({
+        type: 'upgrade_skipped'
+      }));
+      
+      // Check if all players are ready
+      const allReady = Array.from(room.players.values()).every(p => p.upgradeReady);
+      if (allReady) {
+        const { startNextWave } = require('../game/waveManager');
+        setTimeout(() => {
+          startNextWave(room);
+        }, 1000);
+      }
+    }
+  }
+
+  handleRerollUpgrades(room, playerId) {
+    const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
+    const player = room.players.get(playerId);
+    if (player && player.gold >= 100) {
+      player.gold -= 100;
+      const { generateUpgradeOptions } = require('../game/upgradeSystem');
+      const newOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+      player.pendingUpgrades = newOptions; // Update stored options
+      player.upgradeReady = false; // Unskip player
+      player.ws.send(JSON.stringify({
+        type: 'upgrade_rerolled',
+        options: newOptions,
+        gold: player.gold,
+        levels: playerUpgrades,
+        pinnedId: player.pinnedUpgradeId
+      }));
+    }
+  }
+
+  handleVoteNode(room, playerId, nodeId) {
+    handleVoteNode(room, playerId, nodeId);
+  }
+
+  handleVoteEndgame(room, playerId, choice) {
+    const gs = room.gameState;
+    if (gs.currentPhase !== 'ENDGAME_VOTE') return;
+    
+    gs.endgameVotes[playerId] = choice;
+    
+    room.broadcastToRoom({
+      type: 'endgame_vote_update',
+      votes: gs.endgameVotes
+    });
+    
+    // Check if everyone voted
+    let allVoted = true;
+    room.players.forEach((p, id) => {
+      if (!gs.endgameVotes[id]) allVoted = false;
+    });
+    
+    if (allVoted) {
+      const pvpVotes = Object.values(gs.endgameVotes).filter(v => v === 'pvp').length;
+      const endlessVotes = Object.values(gs.endgameVotes).filter(v => v === 'endless').length;
+      const finishVotes = Object.values(gs.endgameVotes).filter(v => v === 'finish').length;
+      const { startSelectedNode, gameOver, triggerNavigation } = require('../game/waveManager');
+      
+      if (pvpVotes > 0) {
+        // At least one person wants to fight!
+        startSelectedNode(room, 'pvp');
+      } else if (endlessVotes > 0 && endlessVotes >= finishVotes) {
+        // Continue to endless navigation
+        triggerNavigation(room);
+      } else {
+        // Finish run
+        gameOver(room, true);
+      }
+    }
+  }
+
+  handleRestartGame(room) {
+    restartGame(room);
+  }
+
+  handleEndWave(room) {
+    room.players.forEach((player, playerId) => {
+      const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
+      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+      
+      player.ws.send(JSON.stringify({
+        type: 'upgrade',
+        gold: player.gold,
+        levels: playerUpgrades,
+        options: upgradeOptions,
+        playerId: playerId,
+        pinnedId: player.pinnedUpgradeId
+      }));
+    });
+    
+    // Broadcast timer start to all
+    if (room.broadcastToRoom) {
+      const { UPGRADE_MAX_TIME } = require('../config/constants');
+      room.broadcastToRoom({
+        type: 'upgrade_timer_start',
+        maxTime: UPGRADE_MAX_TIME
+      });
+    }
+  }
+
+  handleGameOver(room, victory) {
+    gameOver(room, victory);
+  }
+
+  handleBuyMerchant(room, playerId, merchantId) {
+    const gs = room.gameState;
+    const player = room.players.get(playerId);
+    if (!player) return;
+
+    const merchantIndex = gs.merchants.findIndex(m => m.id === merchantId);
+    if (merchantIndex === -1) return;
+    
+    const merchant = gs.merchants[merchantIndex];
+    const upgrade = merchant.upgrade;
+    
+    if (player.gold >= upgrade.cost) {
+      player.gold -= upgrade.cost;
+      
+      // Store persistent upgrade with buyer attribution
+      if (!gs.purchasedMerchantUpgrades) gs.purchasedMerchantUpgrades = [];
+      gs.purchasedMerchantUpgrades.push({ 
+        id: upgrade.id, 
+        buyerName: player.name || 'Anonymous' 
+      });
+      
+      // Apply immediate effect if needed
+      if (upgrade.id === 'titanium_hull') {
+        gs.mothership.maxHull += 1500;
+        gs.mothership.hull += 1500;
+        gs.mothership.titaniumBonus = true;
+      }
+      if (upgrade.id === 'orbital_strike') {
+        gs.orbitalStrikeUnlocked = true;
+        if (!gs.orbitalCooldownMax) gs.orbitalCooldownMax = 300;
+        gs.orbitalCooldownMax = Math.max(30, gs.orbitalCooldownMax - 30); // Reduces cooldown
+      }
+      if (upgrade.id === 'hyper_drives') {
+        gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.15; // Speeds up Mothership and Drones
+        player.merchantSpeed = (player.merchantSpeed || 1.0) + 0.25; // Speeds up buyer
+      }
+      if (upgrade.id === 'quantum_shield') {
+         gs.mothership.shieldMax = (gs.mothership.shieldMax || 0) + 1000;
+         gs.mothership.shield = gs.mothership.shieldMax;
+      }
+      
+      // Player specific
+      if (upgrade.id === 'homing_missiles') player.merchantHoming = true;
+      if (upgrade.id === 'double_projectiles') player.merchantMultiShot = (player.merchantMultiShot || 1) * 2;
+      if (upgrade.id === 'double_damage') player.merchantDamage = (player.merchantDamage || 1) * 2;
+      if (upgrade.id === 'rate_of_fire') player.merchantFireRate = (player.merchantFireRate || 1) * 0.5;
+      if (upgrade.id === 'chain_lightning') player.chainLightning = (player.chainLightning || 0) + 1;
+      if (upgrade.id === 'shrapnel_burst') player.shrapnel = (player.shrapnel || 0) + 1;
+      if (upgrade.id === 'cursed_relic') {
+        player.merchantDamage = (player.merchantDamage || 1) * 5;
+        player.merchantMultiShot = (player.merchantMultiShot || 1) + 5;
+        player.merchantFireRate = (player.merchantFireRate || 1) * 2; // Slower fire rate (value is multiplied to fireRate delay)
+      }
+      if (upgrade.id === 'drone_overclock') {
+        gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.5; // Only speeds up Drones & Mothership
+      }
+      if (upgrade.id === 'laser_weapon') {
+        player.weaponType = 'laser';
+        player.merchantLaser = (player.merchantLaser || 0) + 1;
+      }
+      
+      const { recalculatePlayerStats } = require('../game/upgradeSystem');
+      recalculatePlayerStats(player, gs);
+      
+      if (gs.mothership.hull > gs.mothership.maxHull) gs.mothership.hull = gs.mothership.maxHull;
+      
+      // Increase cost for the next purchase
+      upgrade.cost = Math.floor(upgrade.cost * 1.5);
+      
+      // Notify player
+      player.ws.send(JSON.stringify({
+        type: 'merchant_bought',
+        upgradeId: upgrade.id,
+        gold: player.gold
+      }));
+      
+      // Broadcast update
+      this.broadcastToRoom(room, {
+        type: 'announcement',
+        text: 'UPGRADE ACQUIRED',
+        sub: `${player.name || 'A pilot'} bought ${upgrade.name}`
+      });
+    } else {
+      player.ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Not enough GOLD!'
+      }));
+    }
+  }
+
+  handleMerchantReady(room, playerId) {
+    const gs = room.gameState;
+    const player = room.players.get(playerId);
+    if (!player || gs.encounterType !== 'merchant') return;
+
+    player.merchantReady = !player.merchantReady;
+    
+    room.broadcastToRoom({
+      type: 'player_merchant_ready',
+      playerId: playerId,
+      ready: player.merchantReady
+    });
+
+    let allReady = true;
+    room.players.forEach(p => {
+      if (!p.merchantReady) allReady = false;
+    });
+
+    if (allReady) {
+      // Lazy load to avoid circular dependency
+      const { endWave } = require('../game/waveManager');
+      endWave(room, false);
+    }
+  }
+
+  handleSelectSuperUpgrade(room, playerId, upgradeId) {
+    const gs = room.gameState;
+    const player = room.players.get(playerId);
+    if (!player || gs.currentPhase !== 'SUPER_UPGRADE') return;
+
+    // Apply super upgrade
+    if (upgradeId === 'super_fire_rate') {
+      player.superFireRateActive = true;
+    } else if (upgradeId === 'super_homing') {
+      player.superHomingActive = true;
+    } else if (upgradeId === 'super_drones') {
+      const droneCount = gs.drones.filter(d => d.ownerId === playerId).length;
+      const { spawnDrone } = require('../game/entityFactory');
+      for (let i = 0; i < droneCount; i++) {
+        gs.drones.push(spawnDrone(gs.mothership));
+      }
+      gs.droneFireRateBonus += 2;
+    } else if (upgradeId === 'super_weapons') {
+      player.superWeaponsActive = true;
+    }
+    
+    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+    recalculatePlayerStats(player, gs);
+
+    player.superUpgradeSelected = true;
+
+    // Check if everyone has selected
+    let allSelected = true;
+    room.players.forEach(p => {
+      if (!p.superUpgradeSelected) allSelected = false;
+    });
+
+    if (allSelected) {
+      const { triggerEndgameVoting } = require('../game/waveManager');
+      triggerEndgameVoting(room);
+    }
+  }
+
+  handleDevAction(room, playerId, action, data) {
+    const player = room.players.get(playerId);
+    if (!player || !player.isDev) return;
+
+    const gs = room.gameState;
+    const { recalculatePlayerStats } = require('../game/upgradeSystem');
+
+    switch (action) {
+      case 'add_xp':
+        gs.teamXP += (data.amount || 100);
+        if (gs.teamXP >= gs.teamXPNext) {
+            gs.teamLevel++;
+            gs.teamXP -= gs.teamXPNext;
+            gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
+            gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
+        }
+        break;
+      case 'add_gold':
+        player.gold += (data.amount || 1000);
+        break;
+      case 'set_stat':
+        if (data.stat === 'fireRate') player.fireRate = Math.max(1, (player.fireRate || 8) - (data.value || 1));
+        if (data.stat === 'damage') player.damage = (player.damage || 1) + (data.value || 1);
+        if (data.stat === 'speed') player.speed = (player.speed || 4) + (data.value || 1);
+        break;
+      case 'apply_upgrade':
+        const { applyUpgrade } = require('../game/upgradeSystem');
+        applyUpgrade(room, playerId, data.upgradeId, true);
+        break;
+      case 'mothership_heal':
+        gs.mothership.hull = gs.mothership.maxHull;
+        break;
+      case 'god_mode':
+        player.godMode = !player.godMode;
+        gs.mothership.godMode = !gs.mothership.godMode;
+        if (room.broadcastToRoom) {
+            room.broadcastToRoom({ type: 'announcement', text: 'DEV ACTION', sub: `GOD MODE: ${player.godMode ? 'ON' : 'OFF'}` });
+        }
+        break;
+      case 'skip_wave':
+        const { endWave } = require('../game/waveManager');
+        if (gs.currentPhase === 'COMBAT') {
+            gs.waveTimer = gs.waveDuration;
+            endWave(room, false);
+            if (room.broadcastToRoom) {
+                room.broadcastToRoom({ type: 'announcement', text: 'DEV ACTION', sub: 'WAVE SKIPPED' });
+            }
+        }
+        break;
+    }
+
+    // Broadcast update
+    if (room.broadcastToRoom) {
+      room.broadcastToRoom({
+        type: 'dev_action_applied',
+        playerId: playerId,
+        action: action
+      });
+    }
+  }
+
+  broadcastToRoom(room, msg) {
+    const json = JSON.stringify(msg);
+    room.players.forEach(player => {
+      if (player.ws && player.ws.readyState === 1) { // 1 = OPEN
+        player.ws.send(json);
       }
     });
-
-    ws.on('close', () => {
-      console.log('WebSocket connection closed');
-      if (currentRoom && playerId) {
-        // Broadcast player left
-        roomManager.broadcastToRoom(currentRoom, {
-          type: 'player_left',
-          playerId: playerId
-        });
-
-        // Remove player from room
-        roomManager.removePlayerFromRoom(currentRoom, playerId);
-      }
-    });
-
-    ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
-    });
-  });
+  }
 }
 
-
-module.exports = setupWebSocketHandlers;
+module.exports = RoomManager;
