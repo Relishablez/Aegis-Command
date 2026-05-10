@@ -1,9 +1,255 @@
 // Aegis Command - Multiplayer Client Game Logic
-console.log("[SYSTEM] game.js loaded successfully - v3");
+console.log("[SYSTEM] Aegis Command - v2.0-stable");
 
 // Game Constants
 const GAME_WIDTH = 1600;
 const GAME_HEIGHT = 900;
+
+// Lightweight Procedural Audio Engine
+class AudioEngine {
+    constructor() {
+        this.audioCtx = null;
+        this.masterGain = null;
+        this.initialized = false;
+        this.isMusicPlaying = false;
+        this.lastShootTime = 0;
+        this.isSFXEnabled = true;
+        this.isMusicEnabled = true;
+        this.menuMusicActive = false;
+    }
+
+    init() {
+        if (this.initialized) return;
+        try {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            this.masterGain = this.audioCtx.createGain();
+            this.masterGain.gain.setValueAtTime(0.2, this.audioCtx.currentTime);
+            this.masterGain.connect(this.audioCtx.destination);
+            this.initialized = true;
+            console.log("[AUDIO] System Initialized");
+            
+            // Auto-trigger menu music if enabled
+            if (this.isMusicEnabled) this.playMenuMusic();
+        } catch (e) { console.error("Audio failed", e); }
+    }
+
+    toggleMusic(enabled) {
+        this.isMusicEnabled = enabled;
+        if (!enabled) {
+            this.isMusicPlaying = false;
+            this.menuMusicActive = false;
+        } else {
+            if (gameState) this.startMusic();
+            else this.playMenuMusic();
+        }
+    }
+
+    toggleSFX(enabled) {
+        this.isSFXEnabled = enabled;
+    }
+
+    playShoot(type = 'default') {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const now = this.audioCtx.currentTime;
+        // Throttling
+        if (now - this.lastShootTime < 0.07) return; 
+        this.lastShootTime = now;
+
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        
+        let duration = 0.1;
+
+        switch(type) {
+            case 'laser':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.exponentialRampToValueAtTime(1760, now + 0.1);
+                g.gain.setValueAtTime(0.04, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                duration = 0.1;
+                break;
+            case 'homing_missile':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.exponentialRampToValueAtTime(440, now + 0.2);
+                g.gain.setValueAtTime(0.06, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                duration = 0.2;
+                break;
+            case 'pulse_wave':
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+                g.gain.setValueAtTime(0.12, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                duration = 0.3;
+                break;
+            case 'mine':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(60, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+                g.gain.setValueAtTime(0.08, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                duration = 0.1;
+                break;
+            default:
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600 + Math.random() * 200, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+                g.gain.setValueAtTime(0.07, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                duration = 0.05;
+                break;
+        }
+
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start();
+        osc.stop(now + duration);
+    }
+
+    playBossSpawn() {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const now = this.audioCtx.currentTime;
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(60, now);
+        osc.frequency.linearRampToValueAtTime(30, now + 2);
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(0.4, now + 0.5);
+        g.gain.linearRampToValueAtTime(0, now + 2.5);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start();
+        osc.stop(now + 2.5);
+    }
+
+    playLevelUp() {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const now = this.audioCtx.currentTime;
+        const notes = [440, 554.37, 659.25, 880]; // A4, C#5, E5, A5 arpeggio
+        notes.forEach((freq, i) => {
+            const osc = this.audioCtx.createOscillator();
+            const g = this.audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + i * 0.1);
+            g.gain.setValueAtTime(0, now + i * 0.1);
+            g.gain.linearRampToValueAtTime(0.1, now + i * 0.1 + 0.05);
+            g.gain.linearRampToValueAtTime(0, now + i * 0.1 + 0.3);
+            osc.connect(g); g.connect(this.masterGain);
+            osc.start(now + i * 0.1);
+            osc.stop(now + i * 0.1 + 0.3);
+        });
+    }
+
+    playExplosion() {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, this.audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, this.audioCtx.currentTime + 0.4);
+        g.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.4);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 0.4);
+    }
+
+    playPickup() {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, this.audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1320, this.audioCtx.currentTime + 0.1);
+        g.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.1);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 0.1);
+    }
+
+    playJump() {
+        if (!this.initialized || !this.isSFXEnabled) return;
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(110, this.audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(880, this.audioCtx.currentTime + 1.5);
+        g.gain.setValueAtTime(0, this.audioCtx.currentTime);
+        g.gain.linearRampToValueAtTime(0.2, this.audioCtx.currentTime + 0.5);
+        g.gain.linearRampToValueAtTime(0, this.audioCtx.currentTime + 1.5);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 1.5);
+    }
+
+    playMenuMusic() {
+        if (!this.isMusicEnabled) return;
+        this.init();
+        if (this.menuMusicActive) return;
+        this.menuMusicActive = true;
+        this.playMenuLoop();
+    }
+
+    playMenuLoop() {
+        if (!this.menuMusicActive || !this.isMusicEnabled) return;
+        const now = this.audioCtx.currentTime;
+        const freq = 73.42; // D2 (Deep Interstellar tone)
+        const osc = this.audioCtx.createOscillator();
+        const g = this.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.linearRampToValueAtTime(freq * 1.01, now + 4);
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(0.12, now + 4);
+        g.gain.linearRampToValueAtTime(0, now + 8);
+        osc.connect(g); g.connect(this.masterGain); osc.start(now); osc.stop(now + 8);
+        setTimeout(() => this.playMenuLoop(), 7500);
+    }
+
+    startMusic() {
+        this.menuMusicActive = false; // Stop menu drone
+        if (!this.initialized || this.isMusicPlaying || !this.isMusicEnabled) return;
+        this.isMusicPlaying = true;
+        this.playMusicLoop();
+    }
+
+    playMusicLoop() {
+        if (!this.isMusicPlaying || !this.isMusicEnabled) return;
+        const now = this.audioCtx.currentTime;
+        const notes = [110, 146.83, 164.81, 196.00, 220]; 
+        const freq = notes[Math.floor(Math.random() * notes.length)];
+        
+        const carrier = this.audioCtx.createOscillator();
+        const modulator = this.audioCtx.createOscillator();
+        const modGain = this.audioCtx.createGain();
+        const g = this.audioCtx.createGain();
+
+        carrier.type = 'sine'; modulator.type = 'sine';
+        carrier.frequency.setValueAtTime(freq, now);
+        modulator.frequency.setValueAtTime(freq * 0.5, now);
+        modGain.gain.setValueAtTime(freq * 0.2, now);
+        
+        g.gain.setValueAtTime(0, now);
+        g.gain.linearRampToValueAtTime(0.06, now + 3);
+        g.gain.linearRampToValueAtTime(0, now + 6);
+        
+        modulator.connect(modGain); modGain.connect(carrier.frequency);
+        carrier.connect(g); g.connect(this.masterGain);
+        carrier.start(now); modulator.start(now);
+        carrier.stop(now + 6); modulator.stop(now + 6);
+        
+        setTimeout(() => this.playMusicLoop(), 5000);
+    }
+}
+const audio = new AudioEngine();
 
 // Game State
 let ws = null;
@@ -14,6 +260,7 @@ let isHost = false;
 let isDev = false;
 let compendiumData = [];
 let unlockedAchievements = JSON.parse(localStorage.getItem('aegis_achievements') || '[]');
+let floatingTexts = [];
 
 // Network Smoothing
 let stateHistory = [];
@@ -79,6 +326,14 @@ function resizeCanvas() {
     canvas.style.height = height + 'px';
 }
 
+// Initialize Audio on any click
+document.addEventListener('click', () => {
+    if (!audio.initialized) {
+        audio.init();
+        audio.playMenuMusic();
+    }
+}, { once: false });
+
 // WebSocket connection
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -130,6 +385,12 @@ function connectWebSocket() {
 }
 
 // Message handling
+function rerollUpgrades() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'reroll_upgrades' }));
+    }
+}
+
 function handleMessage(msg) {
     switch (msg.type) {
         case 'room_created':
@@ -197,6 +458,25 @@ function handleMessage(msg) {
         case 'player_upgrade_selected':
             handlePlayerUpgradeSelected(msg);
             break;
+        case 'pickup_text':
+            floatingTexts.push({
+                x: msg.x,
+                y: msg.y,
+                text: msg.text,
+                life: 60,
+                color: msg.playerId === playerId ? '#f1c40f' : '#bdc3c7'
+            });
+            if (msg.text.includes('GOLD') || msg.text.includes('XP') || msg.text.includes('HULL')) {
+                audio.playPickup();
+            }
+            break;
+        case 'game_over':
+            gameOverScreen.classList.remove('hidden');
+            audio.playExplosion();
+            break;
+        case 'nav_transition':
+            audio.playJump();
+            break;
         case 'achievement_unlocked':
             handleAchievementUnlocked(msg);
             break;
@@ -212,6 +492,9 @@ function handleMessage(msg) {
             break;
         case 'announcement':
             handleAnnouncement(msg);
+            if (msg.text === 'LEVEL UP!') {
+                audio.playLevelUp();
+            }
             break;
         case 'endgame_vote_start':
             handleEndgameVoteStart(msg);
@@ -717,21 +1000,48 @@ function drawGame(gs) {
         ctx.save();
         ctx.translate(pickup.x, pickup.y);
         
+        let icon = '?';
+        
         if (pickup.type === 'xp') {
             ctx.fillStyle = '#f39c12';
             ctx.shadowColor = '#f39c12';
+            icon = '⭐';
         } else if (pickup.type === 'gold') {
             ctx.fillStyle = '#f1c40f'; // Yellow
             ctx.shadowColor = '#f1c40f';
+            icon = '💰';
         } else if (pickup.type === 'health') {
-            ctx.fillStyle = '#2ecc71'; // Green
-            ctx.shadowColor = '#2ecc71';
+            ctx.fillStyle = '#e74c3c'; // Red (changed from green)
+            ctx.shadowColor = '#e74c3c';
+            icon = '❤️';
         } else if (pickup.type === 'team_health') {
             ctx.fillStyle = '#1abc9c'; // Teal
             ctx.shadowColor = '#1abc9c';
+            icon = '🤝';
         } else if (pickup.type === 'mothership_health') {
             ctx.fillStyle = '#3498db'; // Blue
             ctx.shadowColor = '#3498db';
+            icon = '🛡️';
+        } else if (pickup.type === 'rapidFire') {
+            ctx.fillStyle = '#3498db';
+            ctx.shadowColor = '#3498db';
+            icon = '⚡';
+        } else if (pickup.type === 'invincible') {
+            ctx.fillStyle = '#9b59b6';
+            ctx.shadowColor = '#9b59b6';
+            icon = '⭐';
+        } else if (pickup.type === 'doubleGold') {
+            ctx.fillStyle = '#e67e22';
+            ctx.shadowColor = '#e67e22';
+            icon = 'x2';
+        } else if (pickup.type === 'turbo') {
+            ctx.fillStyle = '#1abc9c';
+            ctx.shadowColor = '#1abc9c';
+            icon = '🚀';
+        } else if (pickup.type === 'megaShot') {
+            ctx.fillStyle = '#c0392b';
+            ctx.shadowColor = '#c0392b';
+            icon = '💥';
         } else {
             ctx.fillStyle = '#9b59b6'; // Default Purple
             ctx.shadowColor = '#9b59b6';
@@ -739,14 +1049,15 @@ function drawGame(gs) {
         ctx.shadowBlur = 10;
         
         ctx.beginPath();
-        ctx.arc(0, 0, 12, 0, Math.PI * 2);
+        ctx.arc(0, 0, 14, 0, Math.PI * 2);
         ctx.fill();
         
-        // Inner circle
+        // Inner icon
         ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, 0, 1);
         
         ctx.restore();
     });
@@ -817,33 +1128,7 @@ function drawGame(gs) {
         ctx.restore();
     });
     
-    // Draw pickups
-    gs.c?.forEach(p => {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        
-        let color = '#f1c40f'; // Default gold
-        if (p.type === 'health') color = '#e74c3c';
-        else if (p.type === 'rapidFire') color = '#3498db';
-        else if (p.type === 'invincible') color = '#9b59b6';
-        else if (p.type === 'doubleGold') color = '#e67e22';
-        
-        ctx.fillStyle = color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = color;
-        
-        ctx.beginPath();
-        ctx.arc(0, 0, 8, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Inner white dot for "sparkle"
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(-2, -2, 2, 0, Math.PI * 2);
-        ctx.fill();
-        
-        ctx.restore();
-    });
+
     gs.d?.forEach(drone => {
         ctx.save();
         ctx.translate(drone.x, drone.y);
@@ -1072,12 +1357,30 @@ function drawGame(gs) {
             ctx.restore();
         }
         
-        // Player name
+        // Player name and powerup timers
         if (player.alive) {
             ctx.fillStyle = player.color;
             ctx.font = '12px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(player.name || `Player ${player.id.slice(-4)}`, player.x, player.y - pr - 10);
+            
+            // Powerup timers
+            if (player.powerups) {
+                let yOffset = player.y - pr - 25;
+                const activePowerups = Object.entries(player.powerups).filter(([_, time]) => time > 0);
+                activePowerups.forEach(([type, time]) => {
+                    const seconds = Math.ceil(time / 60);
+                    let label = type.toUpperCase();
+                    if (type === 'rapidFire') label = 'RAPID FIRE';
+                    if (type === 'doubleGold') label = '2X GOLD';
+                    if (type === 'megaShot') label = 'MEGA SHOT';
+                    
+                    ctx.fillStyle = '#f1c40f';
+                    ctx.font = '10px Arial';
+                    ctx.fillText(`${label}: ${seconds}s`, player.x, yOffset);
+                    yOffset -= 12;
+                });
+            }
         }
     });
     
@@ -1240,16 +1543,88 @@ function drawGame(gs) {
             
             ctx.restore();
             return; // Already handled restore and drawing
+        } else if (bullet.type === 'pulse_wave') {
+            const alpha = bullet.life / 20;
+            const radius = bullet.radius || 20;
+            const arc = bullet.arc || (Math.PI / 4);
+            
+            ctx.strokeStyle = `rgba(0, 242, 255, ${alpha})`;
+            ctx.lineWidth = 15 * alpha;
+            ctx.lineCap = 'round';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00f2ff';
+            
+            if (bullet.angle !== undefined) {
+                // Already rotated in context? 
+                // Standard bullet draw rotates context by bullet.angle at line 1113
+            }
+
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, -arc/2, arc/2);
+            ctx.stroke();
+            
+            // Core
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 4 * alpha;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, -arc/2, arc/2);
+            ctx.stroke();
+            
+            ctx.restore();
+            return;
         } else if (bullet.type === 'orbital') {
             const alpha = bullet.life / 20;
             const radius = bullet.radius || 150;
-            ctx.strokeStyle = `rgba(52, 152, 219, ${alpha})`;
-            ctx.lineWidth = 5;
+            
+            ctx.restore(); // use global coordinates
+            ctx.save();
+            ctx.translate(bullet.x, bullet.y);
+            
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#e74c3c';
+            ctx.strokeStyle = `rgba(231, 76, 60, ${alpha})`;
+            ctx.lineWidth = 10 * alpha;
             ctx.beginPath();
             ctx.arc(0, 0, radius * (1 - alpha), 0, Math.PI * 2);
             ctx.stroke();
             
-            ctx.fillStyle = `rgba(52, 152, 219, ${alpha * 0.2})`;
+            ctx.fillStyle = `rgba(231, 76, 60, ${alpha * 0.3})`;
+            ctx.fill();
+            
+            ctx.restore();
+            return;
+        } else if (bullet.type === 'mine') {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#e67e22';
+            ctx.fillStyle = '#d35400';
+            ctx.strokeStyle = '#e67e22';
+            ctx.lineWidth = 2;
+            
+            const pulse = 1 + 0.2 * Math.sin(Date.now() / 150);
+            ctx.scale(pulse, pulse);
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, size * 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            if (Date.now() % 500 < 250) {
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.arc(0, 0, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        } else if (bullet.isShrapnelFragment || bullet.type === 'shrapnel') {
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#f39c12';
+            ctx.fillStyle = '#f1c40f'; 
+            
+            ctx.beginPath();
+            ctx.moveTo(size, 0);
+            ctx.lineTo(size/2, size);
+            ctx.lineTo(-size, size/2);
+            ctx.lineTo(-size/2, -size);
+            ctx.closePath();
             ctx.fill();
         } else {
             ctx.beginPath();
@@ -1285,6 +1660,20 @@ function drawGame(gs) {
         
         ctx.restore();
     });
+    
+    // Draw floating texts
+    floatingTexts.forEach(ft => {
+        ctx.save();
+        ctx.translate(ft.x, ft.y - (ft.maxLife - ft.life) * 0.5);
+        ctx.globalAlpha = ft.life / ft.maxLife;
+        ctx.fillStyle = ft.playerId === playerId ? '#f1c40f' : '#bdc3c7';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, 0, 0);
+        ctx.restore();
+        ft.life--;
+    });
+    floatingTexts = floatingTexts.filter(ft => ft.life > 0);
 }
 
 // UI updates
@@ -2302,10 +2691,36 @@ function setupInputHandlers() {
                 mouseY: mouseY,
                 mouseDown: mouseDown
             };
+
+            // Audio init on interaction
+            if (mouseDown || keys.w || keys.a || keys.s || keys.d) {
+                audio.init();
+                audio.startMusic();
+            }
+
             const currentInputString = JSON.stringify(currentInput);
             if (currentInputString !== lastInputString) {
                 ws.send(currentInputString);
                 lastInputString = currentInputString;
+                
+                // Client-side shoot sound if local player is firing
+                const localPlayer = gameState.p.find(p => p.id === playerId);
+                if (mouseDown && localPlayer?.alive) {
+                    audio.playShoot(localPlayer.weaponType);
+                }
+                
+                // Mine check (every few frames to save CPU)
+                if (Math.random() < 0.2 && gameState.b.some(b => b.type === 'mine' && b.ownerId === playerId && b.life > 590)) {
+                    audio.playShoot('mine');
+                }
+
+                // Boss check
+                if (!window.bossSpawning && gameState.e.some(e => e.isBoss)) {
+                    window.bossSpawning = true;
+                    audio.playBossSpawn();
+                } else if (window.bossSpawning && !gameState.e.some(e => e.isBoss)) {
+                    window.bossSpawning = false;
+                }
             }
         }
     }, 1000 / 60); // Check 60 times a sec, but only send if dirty
