@@ -551,12 +551,18 @@ class RoomManager {
     switch (action) {
       case 'add_xp':
         gs.teamXP += (data.amount || 100);
-        if (gs.teamXP >= gs.teamXPNext) {
+        while (gs.teamXP >= gs.teamXPNext) {
             gs.teamLevel++;
             gs.teamXP -= gs.teamXPNext;
             gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
             gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
         }
+        break;
+      case 'level_up':
+        gs.teamLevel++;
+        gs.teamXP = 0;
+        gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
+        gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
         break;
       case 'add_gold':
         player.gold += (data.amount || 1000);
