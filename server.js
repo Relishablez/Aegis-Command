@@ -74,6 +74,7 @@ setupWebSocketHandlers(wss, roomManager);
 
 // Game loop - runs at 60 FPS for all rooms
 function gameTick() {
+  const startTime = Date.now();
   for (const room of roomManager.rooms.values()) {
     try {
       if (room.players.size === 0) continue;
@@ -107,14 +108,24 @@ function gameTick() {
       if (err.stack) console.error(err.stack);
     }
   }
+  
+  const duration = Date.now() - startTime;
+  if (duration > 16) {
+    console.warn(`[PERF] gameTick took ${duration}ms (Overrun!)`);
+  }
 }
 
 // State broadcast - runs at 60 FPS
 function broadcastLoop() {
+  const startTime = Date.now();
   try {
     broadcastState(roomManager);
   } catch (err) {
     console.error('Error in broadcastLoop:', err);
+  }
+  const duration = Date.now() - startTime;
+  if (duration > 32) {
+    console.warn(`[PERF] broadcastLoop took ${duration}ms (Overrun!)`);
   }
 }
 
@@ -127,10 +138,10 @@ function cleanupLoop() {
   }
 }
 
-// Start game loops
-setInterval(gameTick, TICK_RATE);
-setInterval(broadcastLoop, BROADCAST_RATE);
-setInterval(cleanupLoop, ROOM_INACTIVITY_TIMEOUT);
+// Start game loops (Integer intervals for stability)
+setInterval(gameTick, 16); // ~60 FPS
+setInterval(broadcastLoop, 32); // ~31 FPS
+setInterval(cleanupLoop, 30000); // Clean up every 30 seconds
 
 // HTTP routes
 app.get('/', (req, res) => {
