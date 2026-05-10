@@ -241,13 +241,17 @@ function updatePlayer(p, room) {
 
       const mine = spawnProjectile(mineX, mineY, 0, true, 0); // speed 0
       mine.type = 'mine';
+      mine.isMine = true;
+      mine.isArmed = false;
+      mine.warmup = 60; // 1 second arming time
       mine.damage = (p.damage || 1) * 2 * minesLevel;
       mine.explosive = 0.5 + minesLevel * 0.1;
-      mine.life = 600; // 10 seconds
+      mine.life = 36000; // 10 minutes (effectively wave-long)
       mine.ownerId = p.id;
+      mine.color = '#f1c40f'; // Bright orange/yellow for mines
       mine.radius = 15 + minesLevel * 2;
       mine.bulletSize = 1 + minesLevel * 0.2;
-      mine.homing = p.homing || 0;
+      mine.homing = 0; // Mines stay put
       
       gs.projectiles.push(mine);
       const cooldownTime = Math.max(60, 300 - minesLevel * 30); // 5s base, -0.5s per level, min 1s
@@ -256,7 +260,15 @@ function updatePlayer(p, room) {
       
       // Indicator for mine spawn
       if (room.broadcastToRoom) {
-        room.broadcastToRoom({ type: 'pickup_text', x: p.x, y: p.y, text: 'MINE DEPLOYED', color: '#f1c40f', playerId: p.id });
+        room.broadcastToRoom({ 
+          type: 'pickup_text', 
+          x: p.x, 
+          y: p.y, 
+          text: 'MINE DEPLOYED', 
+          color: '#f1c40f', 
+          playerId: p.id,
+          isMine: true // Hint for client
+        });
       }
     }
   }
@@ -861,9 +873,17 @@ function updateProjectiles(room) {
         }
         continue;
     }
+    // Mine handling
+    if (b.isMine) {
+      if (b.warmup > 0) {
+        b.warmup--;
+        if (b.warmup === 0) b.isArmed = true;
+      }
+      b.pulse = (b.pulse || 0) + 0.1; // For client animation
+    }
     
     // Homing logic
-    if (b.friendly && (b.homing > 0 || gs.teamHomingBoost) && gs.enemies.length > 0) {
+    if (b.friendly && !b.isMine && (b.homing > 0 || gs.teamHomingBoost) && gs.enemies.length > 0) {
       let nearest = null;
       let nearestDistSq = (b.type === 'mine' ? 600 : 400) ** 2;
       gs.enemies.forEach(e => {
@@ -912,19 +932,29 @@ function updateProjectiles(room) {
       if (gs.encounterType === 'pvp') {
         let hit = false;
         for (const p of room.players.values()) {
-          if (p.id !== b.ownerId && p.alive && dist(b, p) < p.radius + 10) {
-            if (p.godMode) continue;
-            p.hull -= (b.damage || 1) * 2;
-            if (p.hull <= 0) {
-              p.alive = false;
-              p.respawnTimer = 60;
-              if (gs.pvpScores) {
-                gs.pvpScores[b.ownerId] = (gs.pvpScores[b.ownerId] || 0) + 1;
-              }
-            }
-            gs.projectiles.splice(i, 1);
-            hit = true;
-            break;
+          if (p.id !== b.ownerId && p.alive) {
+             const mineBonus = b.isMine ? 15 : 0;
+             const hitRadius = p.radius + 10 + mineBonus;
+             
+             // Check if armed if it's a mine
+             if (b.isMine && !b.isArmed) continue;
+
+             if (dist(b, p) < hitRadius) {
+                if (p.godMode) continue;
+                p.hull -= (b.damage || 1) * 2;
+                if (p.hull <= 0) {
+                  p.alive = false;
+                  p.respawnTimer = 60;
+                  if (gs.pvpScores) {
+                    gs.pvpScores[b.ownerId] = (gs.pvpScores[b.ownerId] || 0) + 1;
+                  }
+                }
+                
+                if (b.isMine) b.exploded = true;
+                gs.projectiles.splice(i, 1);
+                hit = true;
+                break;
+             }
           }
         }
         if (hit) continue;
@@ -932,10 +962,15 @@ function updateProjectiles(room) {
 
       // Check enemy collisions
       for (let j = gs.enemies.length - 1; j >= 0; j--) {
+        const e = gs.enemies[j];
+        
+        // Skip unarmed mines
+        if (b.isMine && !b.isArmed) continue;
+
         const dx = b.x - e.x;
         const dy = b.y - e.y;
         // Increased collision radius for mines to make them more reliable
-        const mineBonus = b.type === 'mine' ? 15 : 0;
+        const mineBonus = b.isMine ? 20 : 0;
         const hitRadius = (b.bulletSize || 1) * 5 + e.radius + mineBonus;
         const hitRadiusSq = hitRadius * hitRadius;
         
@@ -1061,12 +1096,21 @@ function updateProjectiles(room) {
       if (gs.projectiles[i] && !b.removed) {
         for (let j = gs.asteroids.length - 1; j >= 0; j--) {
           const a = gs.asteroids[j];
-          if (dist(b, a) < a.radius) {
-            a.hull -= 1;
+          if (b.isMine && !b.isArmed) continue;
+
+          const prevX = b.x - (b.vx || 0);
+          const prevY = b.y - (b.vy || 0);
+          const mineBonus = b.isMine ? 15 : 0;
+
+          if (isPointOnLine(a.x, a.y, prevX, prevY, b.x, b.y, a.radius + mineBonus)) {
+            a.hull -= (b.damage || 1);
+            if (b.isMine) b.exploded = true;
+
             if (b.pierce > 0) {
               b.pierce--;
             } else {
               gs.projectiles.splice(i, 1);
+              b.removed = true;
             }
             break;
           }
@@ -1276,11 +1320,11 @@ function updatePickups(room) {
               'mothership_health': '+50 BASE HULL',
               'xp': '+25 XP',
               'gold': `+${p.goldAmount || 25} GOLD`,
-              'rapidFire': 'RAPID FIRE!',
-              'invincible': 'INVINCIBLE!',
-              'doubleGold': 'DOUBLE GOLD!',
-              'turbo': 'TURBO BOOST!',
-              'megaShot': 'MEGA SHOT!'
+              'rapidFire': 'RAPID FIRE (2x Fire Rate)!',
+              'invincible': 'INVINCIBLE (No Damage)!',
+              'doubleGold': 'DOUBLE GOLD (2x Drops)!',
+              'turbo': 'TURBO BOOST (1.5x Speed)!',
+              'megaShot': 'MEGA SHOT (3x Damage)!'
             };
             room.broadcastToRoom({ type: 'pickup_text', x: p.x, y: p.y, text: textMap[p.type] || p.type, playerId: pPlayer.id });
           }
@@ -1354,19 +1398,25 @@ function updateBossAI(boss, room) {
 }
 
 function isPointOnLine(px, py, x1, y1, x2, y2, tolerance) {
-  const lineDist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-  const distToLine = Math.abs((y2 - y1) * px - (x2 - x1) * py + x2 * y1 - y2 * x1) / lineDist;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lineDistSq = dx * dx + dy * dy;
+  
+  // Handle stationary or very slow points to avoid NaN and ensure precision
+  if (lineDistSq < 0.1) {
+    const dSq = (px - x1) ** 2 + (py - y1) ** 2;
+    return dSq <= tolerance * tolerance;
+  }
+  
+  const lineDist = Math.sqrt(lineDistSq);
+  // Cross product distance
+  const distToLine = Math.abs(dy * px - dx * py + x2 * y1 - y2 * x1) / lineDist;
   
   if (distToLine > tolerance) return false;
   
-  // Check if point is within the segment bounds
-  const dotProduct = (px - x1) * (x2 - x1) + (py - y1) * (y2 - y1);
-  if (dotProduct < 0) return false;
-  
-  const squaredLength = (x2 - x1) ** 2 + (y2 - y1) ** 2;
-  if (dotProduct > squaredLength) return false;
-  
-  return true;
+  // Check if point is within the segment bounds using dot product
+  const dotProduct = (px - x1) * dx + (py - y1) * dy;
+  return dotProduct >= 0 && dotProduct <= lineDistSq;
 }
 
 module.exports = {
