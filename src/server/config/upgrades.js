@@ -66,20 +66,28 @@ module.exports = [
     description: 'High-frequency energy pulses. Upgrading increases damage, thickness, and range.'
   },
   { 
+    id: 'pulse_wave', 
+    name: 'Pulse Wave', 
+    type: 'player', 
+    max: 10, 
+    costs: [600, 800, 1000, 1200, 1500, 1800, 2100, 2400, 2700, 3000],
+    description: 'Fires an expanding energy arc. Upgrades increase damage and arc angle (up to 360°). Works with Spread Shot.'
+  },
+  { 
     id: 'homing_missile', 
-    name: 'Homing Missiles', 
+    name: 'Tracking Missiles', 
     type: 'player', 
     max: 5, 
     costs: [800, 1200, 1600, 2000, 2400],
-    description: 'Intrinsic homing projectiles. SYNERGY: Your Homing Shot upgrades allow these missiles to hit multiple targets before breaking.'
+    description: 'Intrinsic tracking projectiles. SYNERGY: Your Tracking Shot upgrades allow these missiles to hit multiple targets before breaking.'
   },
   { 
     id: 'homing', 
-    name: 'Homing Shots', 
+    name: 'Tracking Shots', 
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Projectiles seek nearest enemies. Boosts Homing Missile chain count.'
+    description: 'Projectiles seek nearest enemies. Boosts Tracking Missile chain count.'
   },
   { 
     id: 'explosive', 
@@ -206,11 +214,34 @@ module.exports = [
     description: 'Chance for double damage'
   },
   { 
-    id: 'pickup_range', 
-    name: 'Magnet Pull', 
-    type: 'special', 
+    id: 'ram_spikes', 
+    name: 'Melee Spikes', 
+    type: 'player', 
     max: 10, 
-    costs: [150,250,350,450,550,650,750,850,950,1050],
-    description: 'Expanded pickup collection radius'
+    costs: [200,300,400,500,600,700,800,900,1000,1100],
+    description: 'Deal massive damage by ramming enemies. Damage scales with ship speed.'
+  },
+  { 
+    id: 'shrapnel', 
+    name: 'Shrapnel Rounds', 
+    type: 'player', 
+    max: 10, 
+    costs: [300,400,500,600,700,800,900,1000,1100,1200],
+    description: 'Projectiles split into smaller fragments on impact'
+  },
+  { 
+    id: 'chain_lightning', 
+    name: 'Tesla Modulator', 
+    type: 'player', 
+    max: 10, 
+    description: 'Shots arc chain lightning to a second nearby enemy on hit'
+  },
+  { 
+    id: 'mines', 
+    name: 'Proximity Mines', 
+    type: 'player', 
+    max: 10, 
+    costs: [300,400,500,600,700,800,900,1000,1100,1200],
+    description: 'Deploy stationary mines. Synergizes with Homing upgrades to seek enemies.'
   }
 ];
