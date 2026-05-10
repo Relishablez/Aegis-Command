@@ -235,8 +235,8 @@ class RoomManager {
         player.pendingUpgrades = null; // Clear pending upgrades after purchase
         
         // Clear pin if this was the pinned upgrade
-        if (player.pinnedUpgradeId === upgradeId) {
-          player.pinnedUpgradeId = null;
+        if (player.pinnedIds && player.pinnedIds.includes(upgradeId)) {
+          player.pinnedIds = player.pinnedIds.filter(id => id !== upgradeId);
         }
       }
       
@@ -251,21 +251,24 @@ class RoomManager {
   }
 
   handlePinUpgrade(room, playerId, upgradeId) {
+    if (room.gameState.currentPhase !== 'UPGRADE') return;
     const player = room.players.get(playerId);
     if (player) {
-      if (player.pinnedUpgradeId === upgradeId) {
-        player.pinnedUpgradeId = null;
+      if (!player.pinnedIds) player.pinnedIds = [];
+      if (player.pinnedIds.includes(upgradeId)) {
+        player.pinnedIds = player.pinnedIds.filter(id => id !== upgradeId);
       } else {
-        player.pinnedUpgradeId = upgradeId;
+        player.pinnedIds.push(upgradeId);
       }
       player.ws.send(JSON.stringify({
         type: 'upgrade_pinned',
-        pinnedId: player.pinnedUpgradeId
+        pinnedIds: player.pinnedIds
       }));
     }
   }
 
   handleSkipUpgrade(room, playerId) {
+    if (room.gameState.currentPhase !== 'UPGRADE') return;
     const player = room.players.get(playerId);
     if (player) {
       player.upgradeReady = true;
@@ -288,10 +291,18 @@ class RoomManager {
   handleRerollUpgrades(room, playerId) {
     const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
     const player = room.players.get(playerId);
+    
+    if (room.gameState.currentPhase !== 'UPGRADE') {
+      if (player && player.ws) {
+        player.ws.send(JSON.stringify({ type: 'error', message: 'Upgrade phase is over!' }));
+      }
+      return;
+    }
+    
     if (player && player.gold >= 100) {
       player.gold -= 100;
       const { generateUpgradeOptions } = require('../game/upgradeSystem');
-      const newOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+      const newOptions = generateUpgradeOptions(playerUpgrades, player.pinnedIds);
       player.pendingUpgrades = newOptions; // Update stored options
       player.upgradeReady = false; // Unskip player
       player.ws.send(JSON.stringify({
@@ -299,7 +310,7 @@ class RoomManager {
         options: newOptions,
         gold: player.gold,
         levels: playerUpgrades,
-        pinnedId: player.pinnedUpgradeId
+        pinnedIds: player.pinnedIds
       }));
     }
   }
@@ -351,7 +362,7 @@ class RoomManager {
   handleEndWave(room) {
     room.players.forEach((player, playerId) => {
       const playerUpgrades = room.gameState.playerUpgrades[playerId] || {};
-      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+      const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedIds);
       
       player.ws.send(JSON.stringify({
         type: 'upgrade',
@@ -359,7 +370,7 @@ class RoomManager {
         levels: playerUpgrades,
         options: upgradeOptions,
         playerId: playerId,
-        pinnedId: player.pinnedUpgradeId
+        pinnedIds: player.pinnedIds
       }));
     });
     
