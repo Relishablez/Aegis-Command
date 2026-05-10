@@ -150,7 +150,9 @@ function generateUpgradeOptions(playerUpgrades = {}, pinnedId = null) {
           { id: 'gold_stash_instant', name: 'Gold Reserves', description: 'Receive 500 gold bonus instantly', type: 'special', max: 99, costs: [0] },
           { id: 'luck_boost_instant', name: 'Scrap Magnet', description: 'Significant temporary drop rate boost', type: 'special', max: 99, costs: [0] }
       ];
-      while (options.length < 3) {
+      let safety = 0;
+      while (options.length < 3 && safety < 100) {
+          safety++;
           const fb = fallbacks[Math.floor(Math.random() * fallbacks.length)];
           if (!options.find(o => o.id === fb.id)) {
               options.push(fb);
