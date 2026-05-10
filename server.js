@@ -43,14 +43,17 @@ const roomManager = new RoomManager();
 
 // Global in-memory leaderboard (max 100 entries, FIFO)
 const leaderboard = [];
-global.addLeaderboardEntry = async (entry) => {
+global.addLeaderboardEntry = (entry) => {
   leaderboard.push(entry);
   if (leaderboard.length > 100) leaderboard.shift();
   if (global.azureDbActive) {
-    await require('./src/server/db/azureDb').saveScore(entry);
+    // Don't await here to avoid blocking the main game loop
+    require('./src/server/db/azureDb').saveScore(entry);
   }
 };
 global.getRoomManager = () => roomManager;
+
+console.log('[BOOT] Aegis Command Server starting...');
 
 // Initialize Azure DB
 const azureDb = require('./src/server/db/azureDb');
@@ -166,7 +169,7 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Aegis Command server running on port ${PORT}`);
-  console.log(`Visit http://localhost:${PORT} to play`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[READY] Aegis Command v2.0-STABLE running on port ${PORT}`);
+  console.log(`[INFO] Process ID: ${process.pid}`);
 });
