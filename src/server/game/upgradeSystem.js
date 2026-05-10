@@ -9,6 +9,13 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
   const upgrade = UPGRADES.find(u => u.id === upgradeId);
   if (!upgrade) return false;
 
+  if (!force && gs.currentPhase !== 'UPGRADE') {
+    if (player.ws) {
+      player.ws.send(JSON.stringify({ type: 'error', message: 'Upgrade phase is over!' }));
+    }
+    return false;
+  }
+
   // Initialize player upgrades if needed
   if (!gs.playerUpgrades[playerId]) {
     gs.playerUpgrades[playerId] = {};
@@ -124,24 +131,22 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
   return true;
 }
 
-function generateUpgradeOptions(playerUpgrades = {}, pinnedId = null) {
-  let pinnedUpgrade = null;
-  if (pinnedId) {
-    pinnedUpgrade = UPGRADES.find(u => u.id === pinnedId);
-  }
+function generateUpgradeOptions(playerUpgrades = {}, pinnedIds = []) {
+  if (!Array.isArray(pinnedIds)) pinnedIds = pinnedIds ? [pinnedIds] : [];
+  
+  let pinnedUpgrades = pinnedIds.map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
 
   const availableUpgrades = UPGRADES.filter(upgrade => {
     const currentLevel = playerUpgrades[upgrade.id] || 0;
-    return currentLevel < upgrade.max && upgrade.id !== pinnedId;
+    return currentLevel < upgrade.max && !pinnedIds.includes(upgrade.id);
   });
 
   // Shuffle and pick random upgrades
   const shuffled = availableUpgrades.sort(() => Math.random() - 0.5);
-  const options = shuffled.slice(0, pinnedUpgrade ? 2 : 3);
+  const optionsNeeded = Math.max(0, 3 - pinnedUpgrades.length);
+  const options = shuffled.slice(0, optionsNeeded);
 
-  if (pinnedUpgrade) {
-    options.unshift(pinnedUpgrade);
-  }
+  pinnedUpgrades.reverse().forEach(pu => options.unshift(pu));
 
   // Ensure at least 3 options always exist
   if (options.length < 3) {
@@ -165,12 +170,13 @@ function generateUpgradeOptions(playerUpgrades = {}, pinnedId = null) {
   return options;
 }
 
-function rerollUpgrades(playerUpgrades = {}, pinnedId = null) {
-  return generateUpgradeOptions(playerUpgrades, pinnedId);
+function rerollUpgrades(playerUpgrades = {}, pinnedIds = []) {
+  return generateUpgradeOptions(playerUpgrades, pinnedIds);
 }
 
 function pinUpgrade(player, upgradeId) {
-  player.pinnedUpgradeId = upgradeId;
+  if (!player.pinnedIds) player.pinnedIds = [];
+  player.pinnedIds.push(upgradeId);
   return true;
 }
 
