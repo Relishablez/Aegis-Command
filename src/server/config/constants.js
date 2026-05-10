@@ -19,7 +19,7 @@ module.exports = {
   },
   
   // Upgrade timer
-  UPGRADE_MAX_TIME: 30 * 60, // 30 seconds at 60 FPS
+  UPGRADE_MAX_TIME: 60 * 60, // 60 seconds at 60 FPS
   
   // Spawn rates
   BASE_SPAWN_RATE: 40,
@@ -30,7 +30,7 @@ module.exports = {
     RADIUS: 12,
     SPEED: 2.8,
     HULL: 100,
-    FIRE_RATE: 9
+    FIRE_RATE: 12
   },
   
   MOTHERSHIP: {
