@@ -81,7 +81,8 @@ function buildStateSnapshot(room) {
       id: d.id,
       x: d.x,
       y: d.y,
-      cooldown: d.fireCooldown
+      cooldown: d.fireCooldown,
+      isSupport: d.isSupport
     })),
     w: {
       wave: gs.wave,
