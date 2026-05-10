@@ -56,6 +56,7 @@ async function getScores() {
       queryOptions: { filter: "PartitionKey eq 'Leaderboard'" }
     });
     for await (const entity of iterator) {
+      if (scores.length >= 1000) break; // Limit to most recent/first 1000 to prevent startup hang
       scores.push({
         names: entity.names,
         waves: entity.waves,
