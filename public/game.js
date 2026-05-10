@@ -543,12 +543,16 @@ function handleState(msg) {
             }
         });
         
-        // Clean up seen projectiles
-        if (window.seenProjectiles.size > 2000) {
-            const currentIds = new Set(msg.b.map(b => b.id));
-            window.seenProjectiles.forEach(id => {
-                if (!currentIds.has(id)) window.seenProjectiles.delete(id);
-            });
+        // Optimized cleanup: Only run once per second
+        const nowMs = Date.now();
+        if (!window._lastSeenCleanup || nowMs - window._lastSeenCleanup > 1000) {
+            window._lastSeenCleanup = nowMs;
+            if (window.seenProjectiles.size > 2000) {
+                const currentIds = new Set(msg.b.map(p => p.id));
+                for (const id of window.seenProjectiles) {
+                    if (!currentIds.has(id)) window.seenProjectiles.delete(id);
+                }
+            }
         }
     }
 }
