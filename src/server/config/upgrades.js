@@ -234,6 +234,7 @@ module.exports = [
     name: 'Tesla Modulator', 
     type: 'player', 
     max: 10, 
+    costs: [300,400,500,600,700,800,900,1000,1100,1200],
     description: 'Shots arc chain lightning to a second nearby enemy on hit'
   },
   { 
