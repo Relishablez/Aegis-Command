@@ -64,7 +64,12 @@ function buildStateSnapshot(room) {
       damage: b.damage,
       bulletSize: b.bulletSize || 1,
       exploded: b.exploded || false,
-      type: b.type || 'bullet'
+      type: b.type || 'bullet',
+      width: b.width,
+      range: b.range,
+      radius: b.radius,
+      arc: b.arc,
+      life: b.life
     })),
     c: gs.pickups.map(c => ({
       id: c.id,
