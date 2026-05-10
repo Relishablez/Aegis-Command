@@ -84,7 +84,7 @@ function spawnEnemy(room) {
     case 3: x = -30; y = Math.random() * GAME_HEIGHT; break;
   }
   
-  const diff = getDifficulty(room.gameState.wave);
+  const diff = getDifficulty(room.gameState.wave, room.settings?.difficulty);
   const isDiamond = Math.random() < 0.3;
   
   const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.25; // +25% health per player
@@ -115,7 +115,7 @@ function spawnAsteroid(room) {
   }
   
   const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.2;
-  const diff = getDifficulty(room.gameState.wave);
+  const diff = getDifficulty(room.gameState.wave, room.settings?.difficulty);
   const numVerts = 5 + Math.floor(Math.random() * 4);
   const verts = [];
   for (let i = 0; i < numVerts; i++) {
