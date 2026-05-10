@@ -657,7 +657,7 @@
         <div class="lobby-content">
             <h1>Aegis Command</h1>
             <div id="gameVersion" style="font-size: 10px; color: #7f8c8d; margin-top: -10px; margin-bottom: 20px;">
-                v1.6-STABLE</div>
+                v2.0-STABLE</div>
 
             <!-- Live Server Stats -->
             <div id="liveStats" style="
@@ -761,6 +761,7 @@
                 <div id="lobbyError"
                     style="color: #e74c3c; font-size: 13px; margin-top: 15px; text-align: center; height: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);">
                 </div>
+                <div id="wipNotice" style="color: #f39c12; font-size: 11px; margin-top: 10px; text-align: center;">Notice: Having more than 10 different types of items on screen may cause lags and issues - WIP</div>
             </div>
 
             <div id="roomInfo" class="hidden">
@@ -949,12 +950,27 @@
                 onclick="toggleRoomCodeVisibility()"></i>
         </div>
         <div style="display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: flex; gap: 20px; justify-content: center; margin: 10px 0;">
+                <label style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="toggleMusic" checked onchange="if(window.audio) window.audio.toggleMusic(this.checked)"> Music
+                </label>
+                <label style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="toggleSFX" checked onchange="if(window.audio) window.audio.toggleSFX(this.checked)"> Sound FX
+                </label>
+            </div>
             <button class="btn" onclick="togglePauseMenu()">Resume</button>
             <div class="form-group" style="text-align: left;">
                 <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span
                         id="pauseFpsValue">160</span> FPS)</label>
                 <input type="range" id="pauseFpsLimit" min="30" max="240" value="160" step="10"
                     oninput="document.getElementById('pauseFpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const lf = document.getElementById('fpsLimit'); if(lf){lf.value=this.value; document.getElementById('fpsValue').textContent=this.value;}"
+                    style="width: 100%;">
+            </div>
+            <div class="form-group" style="text-align: left;">
+                <label for="shipSpeedLimit" style="color: #bdc3c7;">Ship Speed Limiter (<span
+                        id="shipSpeedValue">100</span>%)</label>
+                <input type="range" id="shipSpeedLimit" min="10" max="100" value="100" step="10"
+                    oninput="document.getElementById('shipSpeedValue').textContent=this.value; if(window.setSpeedLimit) window.setSpeedLimit(this.value);"
                     style="width: 100%;">
             </div>
             <button class="btn btn-secondary" onclick="leaveRoom()" style="margin-top: 10px;">Leave Game</button>
@@ -1082,7 +1098,7 @@
             instantly and can be stacked multiple times.</div>
     </div>
 
-    <script src="game.js?v=2"></script>
+    <script src="game.js?v=2.0-stable"></script>
     <!-- Reconnect Overlay -->
     <div id="reconnectOverlay">
         <div class="reconnect-spinner"></div>
