@@ -66,14 +66,14 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
   } else if (upgradeId === 'lifesteal') {
     player.lifesteal = level * 0.02;
   } else if (upgradeId === 'bullet_size') {
-    player.bulletSize = 1 + level * 0.1;
+    player.bulletSize = 1 + level * 0.3;
   }
   
   // Mothership Upgrades
   else if (upgradeId === 'hull_max') {
-    const oldMax = gs.mothership.maxHull;
-    gs.mothership.maxHull = 300 + level * 75;
-    gs.mothership.hull += gs.mothership.maxHull - oldMax;
+    const upgradeVal = 75 + (gs.mothership.titaniumBonus ? 100 : 0);
+    gs.mothership.maxHull += upgradeVal;
+    gs.mothership.hull += upgradeVal;
   } else if (upgradeId === 'hull_repair') {
     gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull + level * 50);
   } else if (upgradeId === 'turret') {
@@ -100,15 +100,21 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
   } else if (upgradeId === 'xp_boost') {
     gs.xpMultiplier = (gs.xpMultiplier || 1) + 0.15;
   } else if (upgradeId === 'luck') {
-    gs.dropRateBonus = (gs.dropRateBonus || 0) + 0.05;
+    gs.dropRateBonus = (gs.dropRateBonus || 0) + 0.10;
   } else if (upgradeId === 'crit_chance') {
     player.critChance = (player.critChance || 0) + 0.05;
   } else if (upgradeId === 'pickup_range') {
     gs.teamPickupRange = (gs.teamPickupRange || 0) + 25;
+  } else if (upgradeId === 'hull_repair_instant') {
+    gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull + gs.mothership.maxHull * 0.25);
+  } else if (upgradeId === 'gold_stash_instant') {
+    player.gold += 500;
+  } else if (upgradeId === 'luck_boost_instant') {
+    gs.dropRateBonus = (gs.dropRateBonus || 0) + 0.5;
   }
   
   // Update weapon preference if a weapon was bought
-  if (['laser', 'homing_missile'].includes(upgradeId)) {
+  if (['laser', 'homing_missile', 'pulse_wave'].includes(upgradeId)) {
     player.weaponType = upgradeId;
   }
 
@@ -136,6 +142,23 @@ function generateUpgradeOptions(playerUpgrades = {}, pinnedId = null) {
   if (pinnedUpgrade) {
     options.unshift(pinnedUpgrade);
   }
+
+  // Ensure at least 3 options always exist
+  if (options.length < 3) {
+      const fallbacks = [
+          { id: 'hull_repair_instant', name: 'Emergency Repair', description: 'Instantly restore 25% mothership hull', type: 'special', max: 99, costs: [0] },
+          { id: 'gold_stash_instant', name: 'Gold Reserves', description: 'Receive 500 gold bonus instantly', type: 'special', max: 99, costs: [0] },
+          { id: 'luck_boost_instant', name: 'Scrap Magnet', description: 'Significant temporary drop rate boost', type: 'special', max: 99, costs: [0] }
+      ];
+      while (options.length < 3) {
+          const fb = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+          if (!options.find(o => o.id === fb.id)) {
+              options.push(fb);
+          } else {
+              if (options.length >= availableUpgrades.length + fallbacks.length) break;
+          }
+      }
+  }
   
   return options;
 }
@@ -160,27 +183,34 @@ function recalculatePlayerStats(player, gs) {
   const bsLevel = upgrades['bullet_size'] || 0;
   const laserLevel = upgrades['laser'] || 0;
   const homingLevel = upgrades['homing_missile'] || 0;
+  const pulseLevel = upgrades['pulse_wave'] || 0;
   
   player.fireRate = Math.max(2, 8 - frLevel * 0.7);
   player.damage = 1 + dmgLevel * 0.15;
   player.multiShot = 1 + msLevel;
-  player.bulletSize = 1 + bsLevel * 0.1;
+  player.bulletSize = 1 + bsLevel * 0.3;
   
   // Default weapon type if none set
   if (!player.weaponType) {
       if (laserLevel > 0) player.weaponType = 'laser';
       else if (homingLevel > 0) player.weaponType = 'homing_missile';
+      else if (pulseLevel > 0) player.weaponType = 'pulse_wave';
       else player.weaponType = 'default';
   }
   
   if (player.weaponType === 'laser') {
     player.fireRate *= 1.1;
-    player.bulletSize = 0.15 + (laserLevel * 0.1);
+    const totalLaserLevel = laserLevel + (player.merchantLaser || 0);
+    player.bulletSize = 0.15 + (totalLaserLevel * 0.1);
     player.damage *= 1.8;
-    player.laserRange = 500 + (laserLevel * 80);
+    player.laserRange = 500 + (totalLaserLevel * 80);
   } else if (player.weaponType === 'homing_missile') {
     player.damage *= 1.5;
     player.fireRate *= 1.4;
+  } else if (player.weaponType === 'pulse_wave') {
+    player.fireRate *= 1.5;
+    player.damage *= 2.5;
+    player.pulseArc = (Math.PI / 4) + (pulseLevel * (Math.PI * 1.75 / 10)); // Scaled arc up to ~360 deg
   }
 
   if (player.superFireRateActive) {
@@ -198,10 +228,12 @@ function recalculatePlayerStats(player, gs) {
   if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
   if (player.merchantDamage) player.damage *= player.merchantDamage;
   if (player.merchantFireRate) player.fireRate *= player.merchantFireRate;
+  if (player.merchantHoming) player.homing = (player.homing || 0) + 0.2;
 
   player.ramSpikes = upgrades['ram_spikes'] || 0;
   player.shrapnel = upgrades['shrapnel'] || 0;
   player.chainLightning = upgrades['chain_lightning'] || 0;
+  player.mines = upgrades['mines'] || 0;
 }
 
 module.exports = {
