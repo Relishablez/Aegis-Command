@@ -170,10 +170,10 @@ function triggerSuperUpgrade(room) {
   gs.currentPhase = 'SUPER_UPGRADE';
   
   const superOptions = [
-    { id: 'super_fire_rate', name: 'OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0 },
-    { id: 'super_homing', name: 'OMEGA TARGETING', desc: 'Max Homing and projectiles explode on impact.', cost: 0 },
-    { id: 'super_drones', name: 'DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0 },
-    { id: 'super_weapons', name: 'TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0 }
+    { id: 'super_fire_rate', name: 'OMEGA: OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0, type: 'omega' },
+    { id: 'super_homing', name: 'OMEGA: TARGETING MATRIX', desc: 'Max Tracking and projectiles explode on impact.', cost: 0, type: 'omega' },
+    { id: 'super_drones', name: 'OMEGA: DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0, type: 'omega' },
+    { id: 'super_weapons', name: 'OMEGA: TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0, type: 'omega' }
   ];
 
   room.players.forEach(p => {
@@ -401,7 +401,7 @@ function selectNode(room, nodeType) {
   
   setTimeout(() => {
     triggerUpgradePhase(room, false);
-  }, 2000);
+  }, 500);
 }
 
 function triggerUpgradePhase(room, isMidWave) {
@@ -491,6 +491,7 @@ function startSelectedNode(room, nodeType) {
   
   gs.salvageCollected = 0;
   gs.merchants = [];
+  gs.pickups = [];
   
   if (nodeType === 'escort') {
     gs.mothership.x = GAME_WIDTH * 0.15;
@@ -548,6 +549,7 @@ function startSelectedNode(room, nodeType) {
     });
   } else if (nodeType !== 'salvage') {
     // removed require('./entityFactory') from here
+    const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.25;
     const isBossWave = (gs.wave === 10 || gs.wave === 30 || gs.wave === 50) || (gs.wave > 50 && gs.wave % 10 === 0);
     
     if (isBossWave || nodeType === 'boss') {
@@ -555,13 +557,13 @@ function startSelectedNode(room, nodeType) {
       const boss = spawnEnemy(room);
       boss.radius = 120 + (gs.wave >= 50 ? 30 : 0); // Bigger at extreme
       
-      let baseHealth = 3000 * (gs.wave / 10);
-      if (gs.wave >= 10) baseHealth *= 1.5; // Normal
-      if (gs.wave >= 30) baseHealth *= 2; // Hard
-      if (gs.wave >= 50) baseHealth *= 3; // Extreme
-      if (gs.wave > 50) baseHealth *= Math.pow(1.5, Math.floor((gs.wave - 50) / 10)); // Tankier every 10 after extreme
+      let baseHealth = 2500 * (gs.wave / 10);
+      if (gs.wave === 10) baseHealth = 3500; // Specific reduction for Alpha
+      else if (gs.wave >= 30) baseHealth *= 2; // Hard
+      else if (gs.wave >= 50) baseHealth *= 3; // Extreme
+      if (gs.wave > 50) baseHealth *= Math.pow(1.5, Math.floor((gs.wave - 50) / 10)); 
       
-      boss.maxHull = baseHealth;
+      boss.maxHull = baseHealth * playerFactor; // Scale with player count too
       boss.hull = boss.maxHull;
       boss.isBoss = true;
       boss.aiType = gs.wave >= 50 ? 'boss_extreme' : 'boss_tactical'; // Extreme AI spawns drones
@@ -585,7 +587,7 @@ function startSelectedNode(room, nodeType) {
       // Clear any remaining minions
       gs.enemies = gs.enemies.filter(e => e.isBoss);
     } else {
-      const initialEnemies = 3 + Math.floor(gs.wave / 2);
+      const initialEnemies = 5 + Math.floor(gs.wave / 1.5);
       for (let i = 0; i < initialEnemies; i++) {
         gs.enemies.push(spawnEnemy(room));
       }
