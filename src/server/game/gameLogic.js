@@ -59,7 +59,15 @@ function updatePlayer(p, room) {
     
     p.x += dx * currentSpeed;
     p.y += dy * currentSpeed;
+    p.isMoving = true;
+    p.stillTime = 0;
+  } else {
+    p.isMoving = false;
+    p.stillTime = (p.stillTime || 0) + 1;
   }
+  
+  // Blackhole Rift cooldown
+  if (p.riftCooldown > 0) p.riftCooldown--;
   
   if (p.dashCooldown > 0) p.dashCooldown--;
   
@@ -97,63 +105,78 @@ function updatePlayer(p, room) {
     const damage = (p.damage || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
     const healing = p.healing || 0;
     const piercing = p.piercing || 0;
+    const bulletSize = (p.bulletSize || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
     
     for (let i = 0; i < p.multiShot; i++) {
       const offset = p.multiShot > 1 ? (i - (p.multiShot - 1) / 2) * spread : 0;
       const angle = baseAngle + offset;
 
-      if (p.weaponType === 'laser') {
-        // Hitscan Laser Logic
-        const range = p.laserRange || 500;
-        const targetX = p.x + Math.cos(angle) * range;
-        const targetY = p.y + Math.sin(angle) * range;
+      // Determine active weapon types for this player
+      const activeWeapons = [];
+      if (p.hasDefault) activeWeapons.push('bullet');
+      if (p.hasMissile) activeWeapons.push('homing_missile');
+      if (p.hasPulse) activeWeapons.push('pulse_wave');
+
+      // 1. Fire Laser (Hitscan)
+      if (p.hasLaser) {
+        let laserAngle = angle;
+        // Hitscan Laser Tracking
+        if (p.homing > 0) {
+            let bestTarget = null;
+            let minDist = p.laserRange || 500;
+            room.gameState.enemies.forEach(e => {
+                const d = dist(p, e);
+                if (d < minDist) { minDist = d; bestTarget = e; }
+            });
+            if (bestTarget) {
+                laserAngle = Math.atan2(bestTarget.y - p.y, bestTarget.x - p.x);
+            }
+        }
         
-        // Spawn a visual-only hitscan projectile (fades out over 10 frames)
-        const projectile = spawnProjectile(p.x, p.y, angle, true, 100);
+        const range = p.laserRange || 500;
+        const targetX = p.x + Math.cos(laserAngle) * range;
+        const targetY = p.y + Math.sin(laserAngle) * range;
+        
+        const laserDamage = damage * (p.laserDamageMult || 1.8);
+        const projectile = spawnProjectile(p.x, p.y, laserAngle, true, 100);
         projectile.type = 'laser';
-        projectile.life = 20; 
-        projectile.maxLife = 20;
-        projectile.damage = damage;
+        projectile.life = 15; 
+        projectile.maxLife = 15;
+        projectile.damage = laserDamage;
         projectile.ownerId = p.id;
+        projectile.ownerColor = p.color;
+        projectile.range = range;
+        
+        const laserWidth = 10 + (p.bulletSize || 1) * 5;
+        projectile.width = laserWidth;
         room.gameState.projectiles.push(projectile);
 
-        // Check immediate damage to all entities in path
-        const laserWidth = 10 + (p.bulletSize || 1) * 5; // Tighter collision
-        const gs = room.gameState;
-        
-        // Pass range and width to visual projectile
-        projectile.range = range;
-        projectile.width = laserWidth;
-        
-        // Damage enemies
-        gs.enemies.forEach(e => {
+        room.gameState.enemies.forEach(e => {
           if (isPointOnLine(e.x, e.y, p.x, p.y, targetX, targetY, e.radius + laserWidth)) {
-            e.hull -= damage;
+            e.hull -= laserDamage;
             e.lastHitBy = p.id;
-            p.stats.damageDealt += damage;
+            p.stats.damageDealt += laserDamage;
           }
         });
 
-        // Damage asteroids
-        gs.asteroids.forEach(a => {
+        room.gameState.asteroids.forEach(a => {
           if (isPointOnLine(a.x, a.y, p.x, p.y, targetX, targetY, a.radius + laserWidth)) {
-            a.hull -= damage;
+            a.hull -= laserDamage;
           }
         });
 
-        // PVP Damage
-        if (gs.encounterType === 'pvp') {
+        if (room.gameState.encounterType === 'pvp') {
           room.players.forEach(other => {
             if (other.id !== p.id && other.alive) {
               if (isPointOnLine(other.x, other.y, p.x, p.y, targetX, targetY, other.radius + laserWidth)) {
                 if (other.shield > 0) {
-                  other.shield -= damage;
+                  other.shield -= laserDamage;
                   if (other.shield < 0) {
                     other.hull += other.shield;
                     other.shield = 0;
                   }
                 } else {
-                  other.hull -= damage;
+                  other.hull -= laserDamage;
                 }
                 if (other.hull <= 0) {
                   other.hull = 0;
@@ -162,13 +185,18 @@ function updatePlayer(p, room) {
                   other.respawning = other.lives > 0;
                   other.respawnTimer = 180;
                   p.stats.kills++;
-                  gs.pvpScores[p.id]++;
+                  room.gameState.pvpScores[p.id]++;
                 }
               }
             }
           });
         }
-      } else {
+      }
+
+      // 2. Fire Physical Projectiles
+      activeWeapons.forEach(wType => {
+        if (room.gameState.projectiles.length >= 1500) return;
+        
         const projectile = spawnProjectile(
           p.x + Math.cos(angle) * 20,
           p.y + Math.sin(angle) * 20,
@@ -180,47 +208,36 @@ function updatePlayer(p, room) {
         projectile.healing = healing;
         projectile.pierce = p.piercing || 0;
         projectile.homing = p.homing || 0;
-        projectile.aoe = (p.explosive || 0) * 100;
-        projectile.bulletSize = p.bulletSize || 1;
-        projectile.critChance = p.critChance || 0;
+        projectile.aoe = p.superExplosive ? Math.max(200, (p.explosive || 0) * 100) : (p.explosive || 0) * 100;
+        projectile.bulletSize = bulletSize;
+        projectile.critChance = 0; // Removed Critical Hits upgrade
         projectile.ownerId = p.id;
-        projectile.type = p.weaponType || 'bullet';
+        projectile.ownerColor = p.color;
+        projectile.type = wType;
         
-        if (projectile.type === 'homing_missile') {
-          projectile.homing = Math.max(0.1, p.homing || 0); // Intrinsic homing
-          // Chaining mechanic: homing upgrades give extra hits
+        if (wType === 'homing_missile') {
+          projectile.homing = Math.max(0.1, p.homing || 0); 
           projectile.pierce = (p.piercing || 0) + Math.floor((p.homing || 0) * 10);
-          projectile.color = '#e74c3c'; // Distinct missile color
+          projectile.color = '#e74c3c';
           projectile.isMissile = true;
+          projectile.damage *= 1.5;
         }
         
-        if (projectile.type === 'laser') {
-          projectile.isLaser = true;
-          projectile.pierce = (projectile.pierce || 0) + 10;
-          projectile.range = p.laserRange || 500;
-          // Lasers are fast
-          projectile.vx *= 4;
-          projectile.vy *= 4;
-        }
-
-        if (projectile.type === 'pulse_wave') {
+        if (wType === 'pulse_wave') {
           projectile.isPulse = true;
           projectile.arc = p.pulseArc || (Math.PI / 4);
-          projectile.radius = 20; // Starting radius
+          projectile.radius = 20; 
           projectile.maxRadius = 120 + (p.bulletSize || 1) * 40;
-          projectile.life = 25; // Slightly longer life
-          projectile.damage = damage;
-          projectile.ownerId = p.id;
+          projectile.life = 25; 
+          projectile.damage *= 2.5;
           projectile.color = '#00f2ff';
           projectile.homing = 0;
           projectile.vx = 0;
           projectile.vy = 0;
         }
         
-        if (gs.projectiles.length < 1500) {
-          gs.projectiles.push(projectile);
-        }
-      }
+        room.gameState.projectiles.push(projectile);
+      });
     }
     p.fireCooldown = effectiveFireRate;
   }
@@ -230,7 +247,15 @@ function updatePlayer(p, room) {
   if (p.alive && minesLevel > 0) {
     if (!p.mineCooldown) p.mineCooldown = 0;
     if (p.mineCooldown > 0) p.mineCooldown--;
-    if (p.mineCooldown <= 0 && gs.projectiles.length < 500) {
+    
+    // Mine Limit: Max 30 total. Remove oldest if exceeded.
+    const mines = gs.projectiles.filter(proj => proj.isMine);
+    if (p.mineCooldown <= 0 && gs.projectiles.length < 1500) {
+      if (mines.length >= 30) {
+        const oldestMine = mines.sort((a, b) => a.id - b.id)[0];
+        const idx = gs.projectiles.indexOf(oldestMine);
+        if (idx !== -1) gs.projectiles.splice(idx, 1);
+      }
       const { spawnProjectile } = require('./entityFactory');
       
       // Spawn away from player at random spot
@@ -567,8 +592,28 @@ function updateBossAI(boss, room) {
     }
   }
   
+  // 2nd Boss (Beta) Minion Mechanic
+  if (gs.wave === 20 && boss.phaseTimer % 600 === 0) {
+      room.players.forEach(p => {
+          if (p.alive) {
+              const minion = spawnEnemy(room);
+              minion.isMinion = true;
+              minion.x = boss.x;
+              minion.y = boss.y;
+              minion.hull = 150;
+              minion.color = p.color; // Visually match the player it's mimicking
+              minion.name = "CORRUPTED " + (p.name || "PILOT");
+              gs.enemies.push(minion);
+          }
+      });
+  }
+
   boss.x = Math.max(100, Math.min(GAME_WIDTH - 100, boss.x));
   boss.y = Math.max(100, Math.min(GAME_HEIGHT - 100, boss.y));
+  
+  // Boundary indicator for client
+  boss.drawBoundary = true;
+  boss.boundaryRadius = boss.radius + 30;
 }
 
 function updateEnemies(room) {
@@ -586,8 +631,44 @@ function updateEnemies(room) {
     } else {
       const a = angle(e, m);
       e.angle = a;
-      e.x += Math.cos(a) * e.speed;
-      e.y += Math.sin(a) * e.speed;
+      
+      // Blackhole Gravity Effect
+      let gravX = 0, gravY = 0;
+      let totalSlow = 1.0;
+      
+      gs.projectiles.forEach(proj => {
+          if (proj.isRift) {
+              const d = dist(e, proj);
+              if (d < proj.radius) {
+                  // Apply DPS (approx 12-30 DPS depending on level)
+                  e.hull -= (proj.damage || 0.2);
+                  e.lastHitBy = proj.ownerId;
+                  
+                  if (e.isBoss) return; // Bosses are immune to gravity pull/slow
+
+                  const force = proj.pullForce * (e.isVoidBreaker ? 0.2 : 1.0);
+                  const aRift = angle(e, proj);
+                  
+                  // Sucking in
+                  if (d < 40 && !e.isVoidBreaker) {
+                      e.hull -= 5; // Direct damage at center
+                      gravX += Math.cos(aRift) * force * 5;
+                      gravY += Math.sin(aRift) * force * 5;
+                  } else {
+                      // Outer pull / Trajectory bending
+                      gravX += Math.cos(aRift) * force;
+                      gravY += Math.sin(aRift) * force;
+                      totalSlow *= 0.7; // 30% slow
+                  }
+              }
+          }
+      });
+
+      e.vx = Math.cos(a) * e.speed * totalSlow + gravX;
+      e.vy = Math.sin(a) * e.speed * totalSlow + gravY;
+      
+      e.x += e.vx;
+      e.y += e.vy;
       
       const dx = e.x - m.x;
       const dy = e.y - m.y;
@@ -882,20 +963,34 @@ function updateProjectiles(room) {
       b.pulse = (b.pulse || 0) + 0.1; // For client animation
     }
     
-    // Homing logic
-    if (b.friendly && !b.isMine && (b.homing > 0 || gs.teamHomingBoost) && gs.enemies.length > 0) {
+    // Homing logic (Includes Mines lvl 2+ or during boss fight)
+    const isMineSeeking = b.isMine && ((gs.playerUpgrades[b.ownerId]?.mines >= 2) || gs.enemies.some(e => e.isBoss));
+    if (b.friendly && (b.homing > 0 || gs.teamHomingBoost || isMineSeeking) && (gs.enemies.length > 0 || gs.asteroids.length > 0)) {
       let nearest = null;
-      let nearestDistSq = (b.type === 'mine' ? 600 : 400) ** 2;
-      gs.enemies.forEach(e => {
+      let nearestDistSq = (b.isMine ? 1200 : 400) ** 2; // Mines seek further
+      
+      const targets = [...gs.enemies, ...gs.asteroids];
+      
+      targets.forEach(e => {
         const dx = e.x - b.x;
         const dy = e.y - b.y;
-        if (Math.abs(dx) > 600 || Math.abs(dy) > 600) return;
+        if (Math.abs(dx) > 1200 || Math.abs(dy) > 1200) return;
         const dSq = dx * dx + dy * dy;
-        if (dSq < nearestDistSq) {
+        
+        // Prioritize bosses for mines
+        let priorityMult = 1;
+        if (b.isMine && e.isBoss) priorityMult = 0.1; // Much higher priority
+
+        if (dSq * priorityMult < nearestDistSq) {
           nearestDistSq = dSq;
           nearest = e;
         }
       });
+      
+      // Auto-seek bosses even without upgrade
+      if (!nearest && gs.enemies.some(e => e.isBoss)) {
+          nearest = gs.enemies.find(e => e.isBoss);
+      }
       
       if (nearest) {
         const nearestDist = Math.sqrt(nearestDistSq);
@@ -987,6 +1082,20 @@ function updateProjectiles(room) {
             damage *= 2;
           }
           
+          // Void Breaker Reflection
+          if (e.isVoidBreaker && Math.random() < e.reflectChance) {
+              b.vx *= -1.2; // Reflect back with slight speed boost
+              b.vy *= -1.2;
+              b.friendly = false; // Now dangerous to players!
+              b.color = '#ff00ff'; // Visual cue for reflected shot
+              b.reflected = true;
+              
+              if (room.broadcastToRoom) {
+                  room.broadcastToRoom({ type: 'spark', x: b.x, y: b.y, color: '#ff00ff' });
+              }
+              continue; // Skip normal hit logic for this projectile
+          }
+          
           e.hull -= damage;
           e.lastHitBy = b.ownerId;
           
@@ -1023,18 +1132,20 @@ function updateProjectiles(room) {
           }
           
           // Shrapnel logic
-          if (owner && owner.shrapnel > 0 && !b.isShrapnelFragment) {
-            const shardCount = 2 + Math.floor(owner.shrapnel / 2);
+          if (owner && owner.shrapnel > 0 && (!b.isShrapnelFragment || (owner.fractalShrapnel && (b.fractalDepth || 0) < 2))) {
+            const shardCount = owner.shrapnel + 1;
+            const depth = (b.fractalDepth || 0) + 1;
             for (let k = 0; k < shardCount; k++) {
               const shardAngle = b.angle + (Math.random() - 0.5) * 2;
               const shard = spawnProjectile(b.x, b.y, shardAngle, true, 8);
-              shard.damage = damage * 0.25;
+              shard.damage = damage * (b.isShrapnelFragment ? 0.15 : 0.25);
               shard.isShrapnelFragment = true;
+              shard.fractalDepth = depth;
               shard.type = 'shrapnel';
               shard.life = 30;
               shard.ownerId = owner.id;
               shard.color = '#f1c40f';
-              shard.bulletSize = 1.0 + (owner.shrapnel * 0.2);
+              shard.bulletSize = (1.0 + (owner.shrapnel * 0.2)) * (b.isShrapnelFragment ? 0.6 : 1.0);
               shard.homing = 0; // Shrapnel doesn't home
               gs.projectiles.push(shard);
             }
@@ -1184,30 +1295,85 @@ function updateProjectiles(room) {
 function updateDrones(room) {
   const gs = room.gameState;
   const m = gs.mothership;
-  const anyPlayerAlive = Array.from(room.players.values()).some(p => p.alive);
-  const isBossFight = gs.enemies.some(e => e.isBoss);
+  const { spawnProjectile } = require('./entityFactory');
+  
+  // Calculate total healing cap
+  const supportDrones = gs.drones.filter(d => d.isSupport);
+  const supportDroneCount = supportDrones.length;
+  // Each drone heals 1%, capped at 10% total
+  const healPercent = Math.min(0.10, supportDroneCount * 0.01);
   
   gs.drones.forEach(d => {
-    if (isBossFight) {
-      // Free movement: Wander toward boss or asteroids
-      let target = gs.enemies.find(e => e.isBoss) || gs.asteroids[0];
+    if (d.isSupport) {
+      // Support Drone Logic: Collect powerups and heal
+      let target = null;
+      let nearestDSq = 800 * 800; // Increased search range
+
+      // Filter pickups that aren't already targeted by another drone (unless it's THIS drone)
+      const availablePickups = gs.pickups.filter(p => !p.targetedBy || p.targetedBy === d.id);
+      
+      availablePickups.forEach(p => {
+        const dx = p.x - d.x;
+        const dy = p.y - d.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nearestDSq) {
+          nearestDSq = dSq;
+          target = p;
+        }
+      });
+
       if (target) {
-        const a = angle(d, target);
-        const targetDist = 150;
-        const currentDist = dist(d, target);
+        // Mark as targeted
+        target.targetedBy = d.id;
         
-        if (currentDist > targetDist) {
-          d.x += Math.cos(a) * 2;
-          d.y += Math.sin(a) * 2;
+        // Move towards pickup
+        const a = Math.atan2(target.y - d.y, target.x - d.x);
+        const speed = 5 * (gs.droneSpeedBonus || 1);
+        d.x += Math.cos(a) * speed; 
+        d.y += Math.sin(a) * speed;
+        
+        // Collection check
+        if (nearestDSq < (d.radius + target.radius + 10) * (d.radius + target.radius + 10)) {
+          target.collectedBy = 'drone';
+        }
+      } else {
+        // Return to mothership orbit
+        const a = Math.atan2(m.y - d.y, m.x - d.x);
+        const dx = m.x - d.x;
+        const dy = m.y - d.y;
+        const dToMSq = dx * dx + dy * dy;
+        
+        if (dToMSq > 180 * 180) {
+          const speed = 4 * (gs.droneSpeedBonus || 1);
+          d.x += Math.cos(a) * speed;
+          d.y += Math.sin(a) * speed;
         } else {
-          // Orbit target loosely
-          d.x += Math.cos(a + Math.PI/2) * 1.5;
-          d.y += Math.sin(a + Math.PI/2) * 1.5;
+          d.angle = (d.angle || 0) + 0.015;
+          d.x = m.x + Math.cos(d.angle) * 160;
+          d.y = m.y + Math.sin(d.angle) * 160;
         }
       }
+
+      return;
+    }
+
+    // Combat Drone Logic
+    if (gs.encounterType === 'escort' && gs.mothership.moving) {
+      const a = Math.atan2(m.y - d.y, m.x - d.x);
+      const dx = m.x - d.x;
+      const dy = m.y - d.y;
+      const dToMSq = dx * dx + dy * dy;
+      
+      if (dToMSq > 150 * 150) {
+        d.x += Math.cos(a) * 3;
+        d.y += Math.sin(a) * 3;
+      } else {
+        d.angle = (d.angle || 0) + 0.02;
+        d.x = m.x + Math.cos(d.angle) * d.dist;
+        d.y = m.y + Math.sin(d.angle) * d.dist;
+      }
     } else {
-      // Standard formation
-      let orbitSpeed = d.orbitSpeed || 0.02;
+      let orbitSpeed = (d.orbitSpeed || 0.02) * (gs.droneSpeedBonus || 1);
       if (gs.hyperDriveBoost) orbitSpeed *= gs.hyperDriveBoost;
       d.angle = (d.angle || 0) + orbitSpeed;
       d.x = m.x + Math.cos(d.angle) * (d.dist || 100);
@@ -1218,38 +1384,59 @@ function updateDrones(room) {
     
     if (d.fireCooldown <= 0 && gs.encounterType !== 'pvp') {
       let target = null;
-      let nearestDist = 500;
+      let nearestDSq = 500 * 500;
       
       gs.enemies.forEach(e => {
-        const dToE = dist(d, e);
-        if (dToE < nearestDist) {
-          nearestDist = dToE;
+        const dx = e.x - d.x;
+        const dy = e.y - d.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nearestDSq) {
+          nearestDSq = dSq;
           target = e;
         }
       });
       
       if (!target) {
         gs.asteroids.forEach(a => {
-          const dToA = dist(d, a);
-          if (dToA < nearestDist) {
-            nearestDist = dToA;
+          const dx = a.x - d.x;
+          const dy = a.y - d.y;
+          const dSq = dx * dx + dy * dy;
+          if (dSq < nearestDSq) {
+            nearestDSq = dSq;
             target = a;
           }
         });
       }
       
       if (target) {
-        const a = angle(d, target);
-        const { spawnProjectile } = require('./entityFactory');
+        const a = Math.atan2(target.y - d.y, target.x - d.x);
         const proj = spawnProjectile(d.x, d.y, a, true, 10);
-        proj.damage = 10 + (gs.droneDamageBonus || 0);
-        proj.fireRate = 30 - (gs.droneFireRateBonus || 0);
+        proj.damage = (10 + (gs.droneDamageBonus || 0));
         if (gs.teamHomingBoost) proj.homing = 0.1;
         gs.projectiles.push(proj);
-        d.fireCooldown = 30;
+        
+        d.fireCooldown = Math.max(5, 30 / (gs.droneFireRateBonus || 1));
       }
     }
   });
+
+  // Passive Healing Logic (Every 60 ticks = 1 second)
+  if (supportDroneCount > 0) {
+    gs.droneTickCount = (gs.droneTickCount || 0) + 1;
+    if (gs.droneTickCount >= 60) {
+      gs.droneTickCount = 0;
+      const healAmt = gs.mothership.maxHull * healPercent;
+      if (healAmt > 0) {
+        gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull + healAmt);
+        
+        room.players.forEach(p => {
+          if (p.alive) {
+            p.hull = Math.min(p.maxHull, p.hull + p.maxHull * healPercent);
+          }
+        });
+      }
+    }
+  }
 }
 // (Duplicate updateMothership removed)
 function updatePickups(room) {
@@ -1262,76 +1449,109 @@ function updatePickups(room) {
     p.y += p.vy;
     p.life--;
     
+    // Clear targetedBy so drones can re-evaluate every tick if needed
+    p.targetedBy = null;
+    
     if (p.x < 0 || p.x > GAME_WIDTH) p.vx *= -1;
     if (p.y < 0 || p.y > GAME_HEIGHT) p.vy *= -1;
+    
+    let collector = null;
+    let collectorId = null;
     
     room.players.forEach(pPlayer => {
       if (pPlayer.alive) {
         const pickupRange = p.radius + pPlayer.radius + (pPlayer.pickupRange || 0) + (gs.teamPickupRange || 0);
-        if (dist(p, pPlayer) < pickupRange) {
-          if (p.type === 'health') {
-            pPlayer.hull = Math.min(pPlayer.maxHull, pPlayer.hull + 20);
-          } else if (p.type === 'team_health') {
-            room.players.forEach(ally => {
-              if (ally.alive) ally.hull = Math.min(ally.maxHull, ally.hull + 15);
-            });
-          } else if (p.type === 'mothership_health') {
-            gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull + 50);
-          } else if (p.type === 'xp') {
-            gs.teamXP += 25;
-            if (gs.teamXP >= gs.teamXPNext) {
-              gs.teamLevel++;
-              gs.teamXP -= gs.teamXPNext;
-              gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
-              gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
-              room.players.forEach(ally => {
-                if (ally.alive) ally.hull = Math.min(ally.maxHull, ally.hull + 10);
-              });
-            }
-          } else if (p.type === 'gold') {
-            const salvageScale = gs.encounterType === 'salvage' ? Math.floor(1 + gs.wave * 0.2) : 1;
-            const goldAmount = 25 * salvageScale;
-            p.goldAmount = goldAmount; // For the text map
-            room.players.forEach(ally => ally.gold += goldAmount); // Shared gold
-            if (gs.encounterType === 'salvage') {
-              gs.salvageCollected = (gs.salvageCollected || 0) + 1;
-              // Check if salvage goal met (e.g. 10 items)
-              if (gs.salvageCollected >= 10) {
-                const { endWave } = require('./waveManager');
-                endWave(room);
-              }
-            }
-          } else if (p.type === 'rapidFire') {
-            pPlayer.powerups.rapidFire = 600;
-          } else if (p.type === 'invincible') {
-            pPlayer.powerups.invincible = 600;
-          } else if (p.type === 'doubleGold') {
-            pPlayer.powerups.doubleGold = 600;
-          } else if (p.type === 'turbo') {
-            pPlayer.powerups.turbo = 600;
-          } else if (p.type === 'megaShot') {
-            pPlayer.powerups.megaShot = 400;
-          }
-          
-          if (room.broadcastToRoom) {
-            let textMap = {
-              'health': '+20 HULL',
-              'team_health': '+15 TEAM HULL',
-              'mothership_health': '+50 BASE HULL',
-              'xp': '+25 XP',
-              'gold': `+${p.goldAmount || 25} GOLD`,
-              'rapidFire': 'RAPID FIRE (2x Fire Rate)!',
-              'invincible': 'INVINCIBLE (No Damage)!',
-              'doubleGold': 'DOUBLE GOLD (2x Drops)!',
-              'turbo': 'TURBO BOOST (1.5x Speed)!',
-              'megaShot': 'MEGA SHOT (3x Damage)!'
-            };
-            room.broadcastToRoom({ type: 'pickup_text', x: p.x, y: p.y, text: textMap[p.type] || p.type, playerId: pPlayer.id });
-          }
-          p.life = 0;
+        const dx = p.x - pPlayer.x;
+        const dy = p.y - pPlayer.y;
+        if (dx * dx + dy * dy < pickupRange * pickupRange) {
+          collector = pPlayer;
+          collectorId = pPlayer.id;
         }
       }
     });
+
+    if (!collector && p.collectedBy === 'drone') {
+        // Collect for a random player (since drones are team-wide)
+        collector = room.players.values().next().value;
+        collectorId = collector ? collector.id : null;
+    }
+
+    if (!collector && gs.encounterType === 'salvage') {
+      gs.drones.forEach(d => {
+        if (dist(p, d) < p.radius + d.radius + (gs.teamPickupRange || 0)) {
+          collector = d;
+          collectorId = d.ownerId; // Might be null
+        }
+      });
+    }
+
+    if (collector) {
+      if (p.type === 'health' || p.type === 'team_health') {
+        room.players.forEach(ally => {
+          if (ally.alive) ally.hull = Math.min(ally.maxHull, ally.hull + 20);
+        });
+      } else if (p.type === 'mothership_health') {
+        gs.mothership.hull = Math.min(gs.mothership.maxHull, gs.mothership.hull + 50);
+      } else if (p.type === 'xp') {
+        gs.teamXP += 25;
+        if (gs.teamXP >= gs.teamXPNext) {
+          gs.teamLevel++;
+          gs.teamXP -= gs.teamXPNext;
+          gs.teamXPNext = Math.floor(gs.teamXPNext * 1.6);
+          gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
+          room.players.forEach(ally => {
+            if (ally.alive) ally.hull = Math.min(ally.maxHull, ally.hull + 10);
+          });
+        }
+      } else if (p.type === 'gold') {
+        const salvageScale = gs.encounterType === 'salvage' ? Math.floor(1 + gs.wave * 0.2) : 1;
+        const goldAmount = 25 * salvageScale;
+        p.goldAmount = goldAmount; // For the text map
+        room.players.forEach(ally => ally.gold += goldAmount); // Shared gold
+        if (gs.encounterType === 'salvage') {
+          gs.salvageCollected = (gs.salvageCollected || 0) + 1;
+          // Check if salvage goal met (e.g. 10 items)
+          if (gs.salvageCollected >= 10) {
+            const { endWave } = require('./waveManager');
+            endWave(room);
+          }
+        }
+      } else if (p.type === 'rapidFire') {
+        room.players.forEach(ally => { if (ally.powerups) ally.powerups.rapidFire = 600; });
+      } else if (p.type === 'invincible') {
+        room.players.forEach(ally => { if (ally.powerups) ally.powerups.invincible = 600; });
+      } else if (p.type === 'doubleGold') {
+        room.players.forEach(ally => { if (ally.powerups) ally.powerups.doubleGold = 600; });
+      } else if (p.type === 'turbo') {
+        room.players.forEach(ally => { if (ally.powerups) ally.powerups.turbo = 600; });
+      } else if (p.type === 'megaShot') {
+        room.players.forEach(ally => { if (ally.powerups) ally.powerups.megaShot = 400; });
+      }
+      
+      const pickupTexts = {
+        'health': '+20 HULL',
+        'team_health': 'TEAM REPAIR',
+        'mothership_health': 'BASE REPAIR',
+        'xp': '+25 XP',
+        'gold': `+${p.goldAmount || 25} GOLD`,
+        'rapidFire': 'RAPID FIRE (10s)',
+        'invincible': 'INVINCIBLE (10s)',
+        'doubleGold': '2X GOLD (10s)',
+        'turbo': 'TURBO (10s)',
+        'megaShot': 'MEGA SHOT (7s)'
+      };
+
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({
+           type: 'pickup_effect',
+           x: p.x,
+           y: p.y,
+           text: pickupTexts[p.type] || 'PICKUP!',
+           color: collector.color || '#f1c40f'
+        });
+      }
+      p.life = 0;
+    }
     
     if (p.life <= 0) {
       gs.pickups.splice(i, 1);
@@ -1416,7 +1636,42 @@ function isPointOnLine(px, py, x1, y1, x2, y2, tolerance) {
   
   // Check if point is within the segment bounds using dot product
   const dotProduct = (px - x1) * dx + (py - y1) * dy;
-  return dotProduct >= 0 && dotProduct <= lineDistSq;
+  return dotProduct >= -tolerance && dotProduct <= lineDistSq + tolerance;
+}
+
+function handleRightClick(p, room, mouseX, mouseY) {
+  const gs = room.gameState;
+  const riftLevel = gs.playerUpgrades[p.id]?.blackhole_rift || 0;
+  
+  if (riftLevel > 0) {
+    if (!p.riftCooldown) p.riftCooldown = 0;
+    if (p.riftCooldown <= 0 && gs.projectiles.length < 1500) {
+      const { spawnProjectile } = require('./entityFactory');
+      
+      // Calculate distance from player to target, limit range if needed
+      let targetX = mouseX;
+      let targetY = mouseY;
+      
+      const rift = spawnProjectile(targetX, targetY, 0, true, 0);
+      rift.type = 'blackhole_rift';
+      rift.isRift = true;
+      rift.life = 300 + riftLevel * 60; // 5-15 seconds
+      rift.radius = 150 + riftLevel * 30; // 180-450 units
+      rift.pullForce = 0.05 + riftLevel * 0.02;
+      rift.damage = 0.2 + riftLevel * 0.05; // 0.25 to 0.7 damage per frame (15-42 DPS)
+      rift.ownerId = p.id;
+      rift.color = '#8e44ad'; // Purple for gravity/rift
+      gs.projectiles.push(rift);
+      p.riftCooldown = 600; // 10s cooldown
+      
+      if (room.broadcastToRoom) {
+          room.broadcastToRoom({ 
+              type: 'pickup_text', x: targetX, y: targetY, 
+              text: 'RIFT ANCHOR DEPLOYED', color: '#8e44ad', playerId: p.id 
+          });
+      }
+    }
+  }
 }
 
 module.exports = {
@@ -1426,5 +1681,6 @@ module.exports = {
   updateAsteroids,
   updateProjectiles,
   updateDrones,
-  updatePickups
+  updatePickups,
+  handleRightClick
 };
