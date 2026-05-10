@@ -181,6 +181,6 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[READY] Aegis Command v2.0-STABLE running on port ${PORT}`);
+  console.log(`[READY] Aegis Command v5.0.1 running on port ${PORT}`);
   console.log(`[INFO] Process ID: ${process.pid}`);
 });
