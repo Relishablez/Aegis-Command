@@ -217,7 +217,9 @@ function updatePlayer(p, room) {
           projectile.vy = 0;
         }
         
-        gs.projectiles.push(projectile);
+        if (gs.projectiles.length < 1500) {
+          gs.projectiles.push(projectile);
+        }
       }
     }
     p.fireCooldown = effectiveFireRate;
@@ -1040,10 +1042,14 @@ function updateProjectiles(room) {
             if (b.exploded && b.life > 3) {
               b.life = 3;
               b.damage = 0;
-              b.vx = 0;
-              b.vy = 0;
+              // Only stop if not a persistent projectile type
+              if (!b.isLaser && !b.isPulse) {
+                b.vx = 0;
+                b.vy = 0;
+              }
             } else {
               gs.projectiles.splice(i, 1);
+              b.removed = true;
             }
           }
           break;
@@ -1051,7 +1057,7 @@ function updateProjectiles(room) {
       }
       
       // Check asteroid collisions if projectile still exists
-      if (gs.projectiles[i]) {
+      if (gs.projectiles[i] && !b.removed) {
         for (let j = gs.asteroids.length - 1; j >= 0; j--) {
           const a = gs.asteroids[j];
           if (dist(b, a) < a.radius) {
