@@ -86,20 +86,25 @@ function spawnEnemy(room) {
   
   const diff = getDifficulty(room.gameState.wave, room.settings?.difficulty);
   const isDiamond = Math.random() < 0.3;
+  const isVoidBreaker = !isDiamond && room.gameState.wave >= 5 && Math.random() < 0.15;
   
   const playerScale = 1 + (Math.max(1, room.players.size) - 1) * 0.25; // +25% health per player
   const hostScale = room.settings?.damageMultiplier || 1.0;
   const totalScale = playerScale * hostScale;
   
+  const hull = diff.enemyHealth * totalScale * (isDiamond ? 2 : (isVoidBreaker ? 4 : 1));
+
   return {
     id: nextEntityId++,
     x, y,
-    radius: isDiamond ? ENEMY.ELITE_RADIUS : ENEMY.FIGHTER_RADIUS,
-    speed: diff.enemySpeed * (0.8 + Math.random() * 0.4),
+    radius: isDiamond ? ENEMY.ELITE_RADIUS : (isVoidBreaker ? ENEMY.ELITE_RADIUS * 1.2 : ENEMY.FIGHTER_RADIUS),
+    speed: diff.enemySpeed * (isVoidBreaker ? 0.5 : (0.8 + Math.random() * 0.4)),
     angle: 0,
-    hull: diff.enemyHealth * totalScale * (isDiamond ? 2 : 1),
-    maxHull: diff.enemyHealth * totalScale * (isDiamond ? 2 : 1),
+    hull: hull,
+    maxHull: hull,
     diamond: isDiamond,
+    isVoidBreaker: isVoidBreaker,
+    reflectChance: isVoidBreaker ? 0.3 : 0,
     fireCooldown: 0
   };
 }
@@ -169,18 +174,20 @@ function spawnPickup(x, y, type = 'gold') {
   };
 }
 
-function spawnDrone(mothership) {
+function spawnDrone(mothership, isSupport = false) {
   const angle = Math.random() * Math.PI * 2;
-  const dist = 80 + Math.random() * 40;
+  const dist = isSupport ? 140 : 80 + Math.random() * 40;
   return {
     id: nextEntityId++,
     x: mothership.x + Math.cos(angle) * dist,
     y: mothership.y + Math.sin(angle) * dist,
-    radius: DRONE.RADIUS,
+    radius: isSupport ? DRONE.RADIUS * 1.2 : DRONE.RADIUS,
     angle,
     dist,
-    orbitSpeed: DRONE.ORBIT_SPEED,
-    fireCooldown: 0
+    orbitSpeed: isSupport ? DRONE.ORBIT_SPEED * 0.5 : DRONE.ORBIT_SPEED,
+    fireCooldown: 0,
+    isSupport,
+    targetPickup: null
   };
 }
 
