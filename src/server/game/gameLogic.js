@@ -568,8 +568,11 @@ function updateEnemies(room) {
       e.x += Math.cos(a) * e.speed;
       e.y += Math.sin(a) * e.speed;
       
-      // Check collision with mothership
-      if (dist(e, m) < e.radius + m.radius) {
+      const dx = e.x - m.x;
+      const dy = e.y - m.y;
+      const hitRadius = e.radius + m.radius;
+      // Check collision with mothership (AABB then squared dist)
+      if (Math.abs(dx) < hitRadius && Math.abs(dy) < hitRadius && (dx * dx + dy * dy < hitRadius * hitRadius)) {
         if (!m.godMode) {
             if (m.shield > 0) {
               m.shield -= 10;
@@ -585,9 +588,11 @@ function updateEnemies(room) {
       }
     }
     
-    // Check collision with players
     room.players.forEach(p => {
-      if (p.alive && dist(e, p) < e.radius + p.radius) {
+      const pdx = e.x - p.x;
+      const pdy = e.y - p.y;
+      const pHitRadius = e.radius + p.radius;
+      if (p.alive && Math.abs(pdx) < pHitRadius && Math.abs(pdy) < pHitRadius && (pdx * pdx + pdy * pdy < pHitRadius * pHitRadius)) {
         if (p.godMode) {
             e.hull -= 100; // Ramming damage
             return;
@@ -701,10 +706,13 @@ function updateAsteroids(room) {
     a.x += Math.cos(ang) * a.speed;
     a.y += Math.sin(ang) * a.speed;
     a.rot += a.rotSpeed;
+    const adx = a.x - m.x;
+    const ady = a.y - m.y;
+    const aHitRadius = a.radius + m.radius - 10;
     
     // Check collision with mothership
     const anyPlayerAlive = Array.from(room.players.values()).some(p => p.alive);
-    if (dist(a, m) < a.radius + m.radius - 10) {
+    if (Math.abs(adx) < aHitRadius && Math.abs(ady) < aHitRadius && (adx * adx + ady * ady < aHitRadius * aHitRadius)) {
       if (anyPlayerAlive || m.godMode) {
         // Invulnerable!
         a.hull = 0; // Asteroid still breaks but MS takes no damage
@@ -722,9 +730,11 @@ function updateAsteroids(room) {
       }
     }
     
-    // Check collision with players
     room.players.forEach(p => {
-      if (p.alive && dist(a, p) < a.radius + p.radius - 5) {
+      const apdx = a.x - p.x;
+      const apdy = a.y - p.y;
+      const apHitRadius = a.radius + p.radius - 5;
+      if (p.alive && Math.abs(apdx) < apHitRadius && Math.abs(apdy) < apHitRadius && (apdx * apdx + apdy * apdy < apHitRadius * apHitRadius)) {
         if (p.powerups.invincible > 0 || p.godMode) return; // Invincible!
         
         let pDamage = 25 * (p.cursedDamageTaken || 1);
@@ -783,12 +793,13 @@ function updateProjectiles(room) {
         // Collision logic for arc - check in a ring
         const waveThickness = 40;
         gs.enemies.forEach(e => {
-            const d = dist(b, e);
-            if (d < b.radius + e.radius && d > b.radius - waveThickness) {
-                // Check if enemy is within the arc angle
                 const dx = e.x - b.x;
                 const dy = e.y - b.y;
-                const angleToEnemy = Math.atan2(dy, dx);
+                const distSq = dx * dx + dy * dy;
+                const hitRadius = b.radius + e.radius;
+                
+                if (distSq < hitRadius * hitRadius && distSq > (b.radius - waveThickness) * (b.radius - waveThickness)) {
+                    const angleToEnemy = Math.atan2(dy, dx);
                 
                 let angleDiff = Math.atan2(Math.sin(angleToEnemy - b.angle), Math.cos(angleToEnemy - b.angle));
                 
@@ -806,9 +817,13 @@ function updateProjectiles(room) {
         
         // Check asteroid collision in arc
         gs.asteroids.forEach(a => {
-            const d = dist(b, a);
-            if (d < b.radius + a.radius && d > b.radius - waveThickness) {
-                const angleToAsteroid = Math.atan2(a.y - b.y, a.x - b.x);
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const distSq = dx * dx + dy * dy;
+            const hitRadius = b.radius + a.radius;
+            
+            if (distSq < hitRadius * hitRadius && distSq > (b.radius - waveThickness) * (b.radius - waveThickness)) {
+                const angleToAsteroid = Math.atan2(dy, dx);
                 let angleDiff = Math.atan2(Math.sin(angleToAsteroid - b.angle), Math.cos(angleToAsteroid - b.angle));
                 if (Math.abs(angleDiff) < b.arc / 2) {
                     a.hull -= 1;
@@ -825,16 +840,20 @@ function updateProjectiles(room) {
     // Homing logic
     if (b.friendly && (b.homing > 0 || gs.teamHomingBoost) && gs.enemies.length > 0) {
       let nearest = null;
-      let nearestDist = b.type === 'mine' ? 600 : 400; // Mines have longer seek range
+      let nearestDistSq = (b.type === 'mine' ? 600 : 400) ** 2;
       gs.enemies.forEach(e => {
-        const d = dist(b, e);
-        if (d < nearestDist) {
-          nearestDist = d;
+        const dx = e.x - b.x;
+        const dy = e.y - b.y;
+        if (Math.abs(dx) > 600 || Math.abs(dy) > 600) return;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nearestDistSq) {
+          nearestDistSq = dSq;
           nearest = e;
         }
       });
       
       if (nearest) {
+        const nearestDist = Math.sqrt(nearestDistSq);
         let targetX = nearest.x;
         let targetY = nearest.y;
         
@@ -886,16 +905,17 @@ function updateProjectiles(room) {
 
       // Check enemy collisions
       for (let j = gs.enemies.length - 1; j >= 0; j--) {
-        const e = gs.enemies[j];
-        const hitRadius = (b.bulletSize || 1) * 5;
+        const dx = b.x - e.x;
+        const dy = b.y - e.y;
+        const hitRadius = (b.bulletSize || 1) * 5 + e.radius;
+        const hitRadiusSq = hitRadius * hitRadius;
         
-        // OPTIMIZATION: Fast AABB check before expensive dist()
-        if (Math.abs(b.x - e.x) > e.radius + hitRadius + 5 || 
-            Math.abs(b.y - e.y) > e.radius + hitRadius + 5) {
+        // OPTIMIZATION: Fast AABB check
+        if (Math.abs(dx) > hitRadius || Math.abs(dy) > hitRadius) {
             continue;
         }
         
-        if (dist(b, e) < e.radius + hitRadius) {
+        if (dx * dx + dy * dy < hitRadiusSq) {
           let damage = b.damage || 1;
           
           // Critical hit chance
@@ -920,10 +940,12 @@ function updateProjectiles(room) {
           if (blastRadius > 0) {
             gs.enemies.forEach(other => {
               if (other === e) return;
-              // Fast AABB check
-              if (Math.abs(b.x - other.x) > blastRadius || Math.abs(b.y - other.y) > blastRadius) return;
+              const odx = b.x - other.x;
+              const ody = b.y - other.y;
+              if (Math.abs(odx) > blastRadius || Math.abs(ody) > blastRadius) return;
               
-              if (dist(b, other) < blastRadius) {
+              const dSq = odx * odx + ody * ody;
+              if (dSq < blastRadius * blastRadius) {
                 const aoeDmg = aoeRadius > 0 ? (damage * 0.5) : 0;
                 const expDmg = explosiveRadius > 0 ? (damage * b.explosive) : 0;
                 const totalExtraDmg = aoeDmg + expDmg;
