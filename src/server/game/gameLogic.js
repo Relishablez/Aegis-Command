@@ -790,9 +790,7 @@ function updateProjectiles(room) {
                 const dy = e.y - b.y;
                 const angleToEnemy = Math.atan2(dy, dx);
                 
-                let angleDiff = angleToEnemy - b.angle;
-                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                let angleDiff = Math.atan2(Math.sin(angleToEnemy - b.angle), Math.cos(angleToEnemy - b.angle));
                 
                 if (Math.abs(angleDiff) < b.arc / 2) {
                     if (!b.hitEnemies) b.hitEnemies = new Set();
@@ -811,9 +809,7 @@ function updateProjectiles(room) {
             const d = dist(b, a);
             if (d < b.radius + a.radius && d > b.radius - waveThickness) {
                 const angleToAsteroid = Math.atan2(a.y - b.y, a.x - b.x);
-                let angleDiff = angleToAsteroid - b.angle;
-                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                let angleDiff = Math.atan2(Math.sin(angleToAsteroid - b.angle), Math.cos(angleToAsteroid - b.angle));
                 if (Math.abs(angleDiff) < b.arc / 2) {
                     a.hull -= 1;
                 }
@@ -853,9 +849,7 @@ function updateProjectiles(room) {
         let speed = Math.hypot(b.vx, b.vy) || (b.type === 'mine' ? 3 : 12); // Mines move slower
         
         // Smooth rotation
-        let angleDiff = targetAngle - b.angle;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        let angleDiff = Math.atan2(Math.sin(targetAngle - b.angle), Math.cos(targetAngle - b.angle));
         
         b.angle += Math.max(-0.15, Math.min(0.15, angleDiff));
         b.vx = Math.cos(b.angle) * speed;
