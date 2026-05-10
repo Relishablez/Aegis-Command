@@ -531,6 +531,26 @@ function handleState(msg) {
     
     // Set immediate gameState for non-positional UI elements
     gameState = msg;
+    
+    // Play sounds for new projectiles
+    if (msg.b) {
+        if (!window.seenProjectiles) window.seenProjectiles = new Set();
+        msg.b.forEach(b => {
+            if (!window.seenProjectiles.has(b.id)) {
+                window.seenProjectiles.add(b.id);
+                // Play sound based on bullet type
+                audio.playShoot(b.type || 'default');
+            }
+        });
+        
+        // Clean up seen projectiles
+        if (window.seenProjectiles.size > 2000) {
+            const currentIds = new Set(msg.b.map(b => b.id));
+            window.seenProjectiles.forEach(id => {
+                if (!currentIds.has(id)) window.seenProjectiles.delete(id);
+            });
+        }
+    }
 }
 
 function handlePong(msg) {
@@ -1808,6 +1828,10 @@ function updateUI() {
                         <div style="height: 2px; background: rgba(255,255,255,0.05); border-radius: 1px; overflow: hidden; margin-top: 1px;">
                             <div style="height: 100%; width: ${sPercent}%; background: #3498db;"></div>
                         </div>` : ''}
+                        ${(p.mineCooldown !== undefined && p.mineMaxCooldown > 0) ? `
+                        <div style="height: 2px; background: rgba(0,0,0,0.3); border-radius: 1px; overflow: hidden; margin-top: 1px;">
+                            <div style="height: 100%; width: ${((p.mineMaxCooldown - p.mineCooldown) / p.mineMaxCooldown) * 100}%; background: #f39c12; transition: width 0.1s linear;"></div>
+                        </div>` : ''}
                     </div>
                 `;
             }).join('');
@@ -2703,17 +2727,7 @@ function setupInputHandlers() {
                 ws.send(currentInputString);
                 lastInputString = currentInputString;
                 
-                // Client-side shoot sound if local player is firing
                 const localPlayer = gameState.p.find(p => p.id === playerId);
-                if (mouseDown && localPlayer?.alive) {
-                    audio.playShoot(localPlayer.weaponType);
-                }
-                
-                // Mine check (every few frames to save CPU)
-                if (Math.random() < 0.2 && gameState.b.some(b => b.type === 'mine' && b.ownerId === playerId && b.life > 590)) {
-                    audio.playShoot('mine');
-                }
-
                 // Boss check
                 if (!window.bossSpawning && gameState.e.some(e => e.isBoss)) {
                     window.bossSpawning = true;
