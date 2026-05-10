@@ -76,6 +76,8 @@ function gameTick() {
       if (room.players.size === 0) continue;
       
       const gs = room.gameState;
+      if (gs.isPaused) continue;
+      
       if (!gs.gameOver && gs.currentPhase === 'COMBAT') {
         // Update all game entities safely to prevent a crash in one system from halting the entire game loop
         try { room.players.forEach(p => updatePlayer(p, room)); } catch(e) { console.error(`[CRASH] updatePlayer: ${e.message}`, e.stack); }
