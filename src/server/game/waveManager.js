@@ -1,5 +1,13 @@
 const { generateUpgradeOptions } = require('./upgradeSystem');
 const { 
+  spawnEnemy, 
+  spawnProjectile, 
+  spawnMerchant,
+  spawnAsteroid,
+  spawnPickup,
+  spawnDrone
+} = require('./entityFactory');
+const { 
   GAME_WIDTH, 
   GAME_HEIGHT, 
   WAVE_DURATIONS,
@@ -97,7 +105,7 @@ function updateWave(room) {
       gs.spawnTimer = 0;
       const hasBoss = gs.enemies.some(e => e.isBoss);
       if (!hasBoss) {
-        const { spawnEnemy } = require('./entityFactory');
+        // removed require('./entityFactory') from here
         const enemy = spawnEnemy(room);
         
         // Scale enemy stats
@@ -483,7 +491,7 @@ function startSelectedNode(room, nodeType) {
     gs.merchantVisitCount = (gs.merchantVisitCount || 0) + 1;
     const costMultiplier = 1 + (gs.merchantVisitCount - 1) * 0.5; // +50% cost each subsequent visit
     
-    const { spawnMerchant } = require('./entityFactory');
+    // removed require('./entityFactory') from here
     // Pool of powerful upgrades with scaling costs
     const upgradesPool = [
       { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull. Stacks infinitely.', cost: Math.floor(400 * costMultiplier) },
@@ -523,7 +531,7 @@ function startSelectedNode(room, nodeType) {
       p.hull = p.maxHull;
     });
   } else if (nodeType !== 'salvage') {
-    const { spawnEnemy } = require('./entityFactory');
+    // removed require('./entityFactory') from here
     const isBossWave = (gs.wave === 10 || gs.wave === 30 || gs.wave === 50) || (gs.wave > 50 && gs.wave % 10 === 0);
     
     if (isBossWave || nodeType === 'boss') {
