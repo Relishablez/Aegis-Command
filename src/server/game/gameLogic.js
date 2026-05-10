@@ -87,10 +87,11 @@ function updatePlayer(p, room) {
   if (p.powerups.turbo > 0) p.powerups.turbo--;
   if (p.powerups.megaShot > 0) p.powerups.megaShot--;
   
-  const effectiveFireRate = p.powerups.rapidFire > 0 ? Math.max(2, p.fireRate / 2) : p.fireRate;
+  let effectiveFireRate = p.powerups.rapidFire > 0 ? Math.max(2, p.fireRate / 2) : p.fireRate;
+  effectiveFireRate = Math.max(4, effectiveFireRate); // Cap at 4 frames to prevent massive overlap
   
   if (p.fireCooldown > 0) p.fireCooldown--;
-  if (p.mouseDown && p.fireCooldown <= 0 && room.gameState.projectiles.length < 2000) {
+  if (p.mouseDown && p.fireCooldown <= 0 && room.gameState.projectiles.length < 500) {
     const spread = 0.15 + (p.spread || 0);
     const baseAngle = p.angle;
     const damage = (p.damage || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
@@ -201,11 +202,54 @@ function updatePlayer(p, room) {
           projectile.vx *= 4;
           projectile.vy *= 4;
         }
+
+        if (projectile.type === 'pulse_wave') {
+          projectile.isPulse = true;
+          projectile.arc = p.pulseArc || (Math.PI / 4);
+          projectile.radius = 20; // Starting radius
+          projectile.maxRadius = 120 + (p.bulletSize || 1) * 40;
+          projectile.life = 25; // Slightly longer life
+          projectile.damage = damage;
+          projectile.ownerId = p.id;
+          projectile.color = '#00f2ff';
+          projectile.homing = 0;
+          projectile.vx = 0;
+          projectile.vy = 0;
+        }
         
         gs.projectiles.push(projectile);
       }
     }
     p.fireCooldown = effectiveFireRate;
+  }
+  
+  // Proximity Mines
+  const minesLevel = gs.playerUpgrades[p.id]?.mines || 0;
+  if (p.alive && minesLevel > 0) {
+    if (!p.mineCooldown) p.mineCooldown = 0;
+    if (p.mineCooldown > 0) p.mineCooldown--;
+    if (p.mineCooldown <= 0 && gs.projectiles.length < 500) {
+      const { spawnProjectile } = require('./entityFactory');
+      
+      // Spawn away from player at random spot
+      const spawnAngle = Math.random() * Math.PI * 2;
+      const spawnDist = 60 + Math.random() * 80; // 60-140 units away
+      const mineX = p.x + Math.cos(spawnAngle) * spawnDist;
+      const mineY = p.y + Math.sin(spawnAngle) * spawnDist;
+
+      const mine = spawnProjectile(mineX, mineY, 0, true, 0); // speed 0
+      mine.type = 'mine';
+      mine.damage = (p.damage || 1) * 2 * minesLevel;
+      mine.explosive = 0.5 + minesLevel * 0.1;
+      mine.life = 600; // 10 seconds
+      mine.ownerId = p.id;
+      mine.radius = 15 + minesLevel * 2;
+      mine.bulletSize = 1 + minesLevel * 0.2;
+      mine.homing = p.homing || 0;
+      
+      gs.projectiles.push(mine);
+      p.mineCooldown = 180 - minesLevel * 10; // Spawns faster with levels
+    }
   }
   
   // Melee Spikes (Ramming Logic)
@@ -423,20 +467,60 @@ function updateBossAI(boss, room) {
 
   const { spawnBullet } = require('./entityFactory');
   
-  // Wave specific behavior
-  if (gs.wave === 15) {
-    // Final Boss Mechanics
-    if (boss.phaseTimer % 300 < 150) {
-      // Rapid fire phase
+  // Boss drone spawning (Hard & Extreme)
+  if ((gs.wave === 30 || gs.wave >= 50) && boss.phaseTimer % 300 === 0) {
+    const { spawnEnemy } = require('./entityFactory');
+    for (let i = 0; i < (gs.wave >= 50 ? 4 : 2); i++) {
+      const drone = spawnEnemy(room);
+      drone.x = boss.x + (Math.random() - 0.5) * 100;
+      drone.y = boss.y + (Math.random() - 0.5) * 100;
+      drone.hull = 300;
+      drone.speed = 3;
+      gs.enemies.push(drone);
+    }
+  }
+
+  if (gs.wave >= 50) {
+    // Extreme Boss Mechanics
+    if (boss.phaseTimer % 400 < 200) {
+      // Phase 1: Heavy barrage
       if (boss.fireCooldown <= 0) {
-        for (let i = 0; i < 3; i++) {
-          const a = angle(boss, m) + (Math.random() - 0.5) * 0.5;
-          gs.bullets.push(spawnBullet(boss, a, 10, true)); // true = isEnemy
+        const a = angle(boss, m);
+        for (let i = -2; i <= 2; i++) {
+          const b = spawnBullet(boss, a + i * 0.15, 12, true);
+          b.radius = 8;
+          b.damage = 30;
+          gs.bullets.push(b);
         }
-        boss.fireCooldown = 20;
+        boss.fireCooldown = 25;
       }
     } else {
-      // Sweeping lasers / big slow missiles
+      // Phase 2: Big Orbs + Dodging
+      if (boss.fireCooldown <= 0) {
+        const a = angle(boss, m);
+        const b = spawnBullet(boss, a, 6, true);
+        b.radius = 30;
+        b.type = 'big_orb';
+        b.damage = 80;
+        gs.bullets.push(b);
+        boss.fireCooldown = 50;
+      }
+      if (Math.random() < 0.05) {
+        boss.x += (Math.random() > 0.5 ? 150 : -150);
+        boss.y += (Math.random() > 0.5 ? 80 : -80);
+      }
+    }
+  } else if (gs.wave >= 30) {
+    // Hard Boss Mechanics
+    if (boss.phaseTimer % 300 < 150) {
+      if (boss.fireCooldown <= 0) {
+        const a = angle(boss, m);
+        for (let i = -1; i <= 1; i++) {
+          gs.bullets.push(spawnBullet(boss, a + i * 0.2, 10, true));
+        }
+        boss.fireCooldown = 30;
+      }
+    } else {
       if (boss.fireCooldown <= 0) {
         const a = angle(boss, m);
         const b = spawnBullet(boss, a, 5, true);
@@ -446,30 +530,25 @@ function updateBossAI(boss, room) {
         boss.fireCooldown = 60;
       }
     }
-    
-    // Dodging mechanic
-    if (Math.random() < 0.02) {
-      boss.x += (Math.random() > 0.5 ? 100 : -100);
-      boss.y += (Math.random() > 0.5 ? 50 : -50);
-      boss.x = Math.max(100, Math.min(1500, boss.x));
-      boss.y = Math.max(100, Math.min(800, boss.y));
-    }
-  } else if (gs.wave === 10) {
-    // Medium Boss Mechanics
+  } else if (gs.wave >= 10) {
+    // Normal Boss Mechanics
     if (boss.fireCooldown <= 0) {
       const a = angle(boss, m);
       for (let i = -1; i <= 1; i++) {
-        gs.bullets.push(spawnBullet(boss, a + i * 0.2, 8, true));
+        gs.bullets.push(spawnBullet(boss, a + i * 0.15, 8, true));
       }
       boss.fireCooldown = 40;
     }
   } else {
-    // Easy Boss Mechanics (Wave 5)
+    // Easy Boss Mechanics (If wave 5 still spawns boss)
     if (boss.fireCooldown <= 0) {
       gs.bullets.push(spawnBullet(boss, angle(boss, m), 6, true));
       boss.fireCooldown = 60;
     }
   }
+  
+  boss.x = Math.max(100, Math.min(GAME_WIDTH - 100, boss.x));
+  boss.y = Math.max(100, Math.min(GAME_HEIGHT - 100, boss.y));
 }
 
 function updateEnemies(room) {
@@ -592,9 +671,21 @@ function updateEnemies(room) {
         }
       });
       
-      const dropChance = 0.2 + gs.dropRateBonus;
+      const ownerPlayer = room.players.get(e.lastHitBy);
+      const dropChance = 0.2 + gs.dropRateBonus + (ownerPlayer ? (ownerPlayer.luck || 0) * 0.05 : 0);
+      
       if (Math.random() < dropChance) {
-        gs.pickups.push(spawnPickup(e.x, e.y, Math.random() < 0.7 ? 'gold' : 'health'));
+        let type;
+        const rand = Math.random();
+        if (rand < 0.6) type = 'gold'; // 60% gold
+        else if (rand < 0.8) type = 'health'; // 20% health
+        else if (rand < 0.9) type = 'mothership_health'; // 10% mothership health
+        else {
+          // 10% powerups
+          const pTypes = ['rapidFire', 'invincible', 'doubleGold', 'turbo', 'megaShot'];
+          type = pTypes[Math.floor(Math.random() * pTypes.length)];
+        }
+        gs.pickups.push(spawnPickup(e.x, e.y, type));
       }
       gs.enemies.splice(i, 1);
     }
@@ -681,11 +772,65 @@ function updateProjectiles(room) {
     b.x += b.vx;
     b.y += b.vy;
     b.life--;
+
+    if (b.isPulse) {
+        b.radius += 10; // Expanding wave speed
+        const owner = room.players.get(b.ownerId);
+        if (owner && owner.alive) {
+            b.x = owner.x;
+            b.y = owner.y;
+        }
+        
+        // Collision logic for arc - check in a ring
+        const waveThickness = 40;
+        gs.enemies.forEach(e => {
+            const d = dist(b, e);
+            if (d < b.radius + e.radius && d > b.radius - waveThickness) {
+                // Check if enemy is within the arc angle
+                const dx = e.x - b.x;
+                const dy = e.y - b.y;
+                const angleToEnemy = Math.atan2(dy, dx);
+                
+                let angleDiff = angleToEnemy - b.angle;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                
+                if (Math.abs(angleDiff) < b.arc / 2) {
+                    if (!b.hitEnemies) b.hitEnemies = new Set();
+                    if (!b.hitEnemies.has(e.id)) {
+                        e.hull -= b.damage;
+                        e.lastHitBy = b.ownerId;
+                        b.hitEnemies.add(e.id);
+                        if (owner) owner.stats.damageDealt += b.damage;
+                    }
+                }
+            }
+        });
+        
+        // Check asteroid collision in arc
+        gs.asteroids.forEach(a => {
+            const d = dist(b, a);
+            if (d < b.radius + a.radius && d > b.radius - waveThickness) {
+                const angleToAsteroid = Math.atan2(a.y - b.y, a.x - b.x);
+                let angleDiff = angleToAsteroid - b.angle;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                if (Math.abs(angleDiff) < b.arc / 2) {
+                    a.hull -= 1;
+                }
+            }
+        });
+
+        if (b.life <= 0) {
+            gs.projectiles.splice(i, 1);
+        }
+        continue;
+    }
     
     // Homing logic
     if (b.friendly && (b.homing > 0 || gs.teamHomingBoost) && gs.enemies.length > 0) {
       let nearest = null;
-      let nearestDist = 400; // Increased range for super upgrade
+      let nearestDist = b.type === 'mine' ? 600 : 400; // Mines have longer seek range
       gs.enemies.forEach(e => {
         const d = dist(b, e);
         if (d < nearestDist) {
@@ -695,10 +840,24 @@ function updateProjectiles(room) {
       });
       
       if (nearest) {
-        const targetAngle = angle(b, nearest);
-        const speed = Math.hypot(b.vx, b.vy) || 12;
+        let targetX = nearest.x;
+        let targetY = nearest.y;
+        
+        // Predictive tracking if homing > 0.15 (level 3+)
+        if (b.homing >= 0.15) {
+          const timeToReach = nearestDist / (Math.hypot(b.vx, b.vy) || 5);
+          targetX += (nearest.vx || 0) * timeToReach * 0.5;
+          targetY += (nearest.vy || 0) * timeToReach * 0.5;
+        }
+
+        const targetAngle = Math.atan2(targetY - b.y, targetX - b.x);
+        let speed = Math.hypot(b.vx, b.vy) || (b.type === 'mine' ? 3 : 12); // Mines move slower
+        
         // Smooth rotation
-        const angleDiff = targetAngle - b.angle;
+        let angleDiff = targetAngle - b.angle;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        
         b.angle += Math.max(-0.15, Math.min(0.15, angleDiff));
         b.vx = Math.cos(b.angle) * speed;
         b.vy = Math.sin(b.angle) * speed;
@@ -792,10 +951,12 @@ function updateProjectiles(room) {
               const shard = spawnProjectile(b.x, b.y, shardAngle, true, 8);
               shard.damage = damage * 0.25;
               shard.isShrapnelFragment = true;
-              shard.life = 20;
+              shard.type = 'shrapnel';
+              shard.life = 30;
               shard.ownerId = owner.id;
-              shard.color = '#bdc3c7';
-              shard.bulletSize = 0.6;
+              shard.color = '#f1c40f';
+              shard.bulletSize = 1.0 + (owner.shrapnel * 0.2);
+              shard.homing = 0; // Shrapnel doesn't home
               gs.projectiles.push(shard);
             }
           }
@@ -831,9 +992,13 @@ function updateProjectiles(room) {
           if (b.pierce > 0) {
             b.pierce--;
             // Missile Synergy: Homing missiles keep seeking new targets
-            if (b.isMissile) {
-              b.homing = Math.min(0.25, (b.homing || 0) + 0.05); 
+            if (b.isMissile || b.homing > 0) {
+              b.homing = Math.min(0.3, (b.homing || 0) + 0.1); 
               b.vx *= 0.5; b.vy *= 0.5; 
+              // Boost longevity and damage based on homing upgrades
+              const ownerHoming = owner ? (owner.homing || 0) : 0;
+              b.life = Math.max(b.life, 120 + ownerHoming * 60); 
+              b.damage *= (1.1 + ownerHoming * 0.5);
             }
           } else {
             if (b.exploded && b.life > 3) {
@@ -1037,7 +1202,10 @@ function updatePickups(room) {
               });
             }
           } else if (p.type === 'gold') {
-            room.players.forEach(ally => ally.gold += 25); // Shared gold
+            const salvageScale = gs.encounterType === 'salvage' ? Math.floor(1 + gs.wave * 0.2) : 1;
+            const goldAmount = 25 * salvageScale;
+            p.goldAmount = goldAmount; // For the text map
+            room.players.forEach(ally => ally.gold += goldAmount); // Shared gold
             if (gs.encounterType === 'salvage') {
               gs.salvageCollected = (gs.salvageCollected || 0) + 1;
               // Check if salvage goal met (e.g. 10 items)
@@ -1056,6 +1224,22 @@ function updatePickups(room) {
             pPlayer.powerups.turbo = 600;
           } else if (p.type === 'megaShot') {
             pPlayer.powerups.megaShot = 400;
+          }
+          
+          if (room.broadcastToRoom) {
+            let textMap = {
+              'health': '+20 HULL',
+              'team_health': '+15 TEAM HULL',
+              'mothership_health': '+50 BASE HULL',
+              'xp': '+25 XP',
+              'gold': `+${p.goldAmount || 25} GOLD`,
+              'rapidFire': 'RAPID FIRE!',
+              'invincible': 'INVINCIBLE!',
+              'doubleGold': 'DOUBLE GOLD!',
+              'turbo': 'TURBO BOOST!',
+              'megaShot': 'MEGA SHOT!'
+            };
+            room.broadcastToRoom({ type: 'pickup_text', x: p.x, y: p.y, text: textMap[p.type] || p.type, playerId: pPlayer.id });
           }
           p.life = 0;
         }
