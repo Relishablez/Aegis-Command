@@ -797,9 +797,15 @@ function updateProjectiles(room) {
   
   for (let i = gs.projectiles.length - 1; i >= 0; i--) {
     const b = gs.projectiles[i];
-    b.x += b.vx;
-    b.y += b.vy;
+    b.x += b.vx || 0;
+    b.y += b.vy || 0;
     b.life--;
+    
+    // Safety: Prevent NaN coordinates
+    if (isNaN(b.x) || isNaN(b.y)) {
+      gs.projectiles.splice(i, 1);
+      continue;
+    }
 
     if (b.isPulse) {
         b.radius += 10; // Expanding wave speed
@@ -933,12 +939,12 @@ function updateProjectiles(room) {
         const hitRadius = (b.bulletSize || 1) * 5 + e.radius + mineBonus;
         const hitRadiusSq = hitRadius * hitRadius;
         
-        // OPTIMIZATION: Fast AABB check
-        if (Math.abs(dx) > hitRadius || Math.abs(dy) > hitRadius) {
-            continue;
-        }
+        // CCD (Continuous Collision Detection) to prevent tunneling at high speeds
+        const prevX = b.x - (b.vx || 0);
+        const prevY = b.y - (b.vy || 0);
         
-        if (dx * dx + dy * dy < hitRadiusSq) {
+        // Check if the enemy is near the line segment from prev position to current
+        if (isPointOnLine(e.x, e.y, prevX, prevY, b.x, b.y, hitRadius)) {
           let damage = b.damage || 1;
           
           // Critical hit chance
@@ -1042,11 +1048,6 @@ function updateProjectiles(room) {
             if (b.exploded && b.life > 3) {
               b.life = 3;
               b.damage = 0;
-              // Only stop if not a persistent projectile type
-              if (!b.isLaser && !b.isPulse) {
-                b.vx = 0;
-                b.vy = 0;
-              }
             } else {
               gs.projectiles.splice(i, 1);
               b.removed = true;
