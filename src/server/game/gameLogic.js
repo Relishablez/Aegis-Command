@@ -364,11 +364,10 @@ function updateMothership(room) {
   if (gs.orbitalStrikeUnlocked && gs.currentPhase === 'COMBAT' && gs.enemies.length > 0) {
     if (!m.orbitalCooldown) m.orbitalCooldown = 0;
     if (m.orbitalCooldown <= 0) {
-      let target = gs.enemies.find(e => e.isBoss);
-      if (!target) target = gs.enemies.reduce((prev, current) => (prev.hull > current.hull) ? prev : current);
+      const target = gs.enemies.find(e => e.isBoss) || gs.enemies.reduce((prev, current) => (prev.hull > current.hull) ? prev : current);
       
       const a = angle(m, target);
-      const { spawnProjectile } = require('./entityFactory');
+      // removed require here
       const proj = spawnProjectile(m.x, m.y, a, true, 20);
       proj.damage = 1000;
       proj.bulletSize = 8;
@@ -397,7 +396,7 @@ function updateMothership(room) {
         const range = m.turretRange || 500;
         if (nearest && dist(m, nearest) < range) {
           const a = angle(m, nearest);
-          const { spawnProjectile } = require('./entityFactory');
+          // removed require here
           
           // Use Ultra Pulse Laser if players bought it and they are dead
           if (!anyPlayerAlive && gs.purchasedMerchantUpgrades?.some(u => u.id === 'laser')) {
@@ -427,7 +426,7 @@ function updateMothership(room) {
         const targets = [...gs.enemies, ...gs.asteroids];
         if (targets.length > 0) {
           const target = targets[Math.floor(Math.random() * targets.length)];
-          const { spawnProjectile } = require('./entityFactory');
+          // removed require here
           const b = spawnProjectile(target.x, target.y, 0, true, 0);
           b.type = 'orbital';
           b.life = 30;
