@@ -22,6 +22,17 @@ function updateWave(room) {
   if (!gs.lastTimerTick) gs.lastTimerTick = now;
   const deltaSeconds = (now - gs.lastTimerTick) / 1000;
   gs.lastTimerTick = now;
+  
+  // Jump Sequence / Catch-up Pause
+  if (gs.jumpTimer > 0) {
+      gs.jumpTimer -= deltaSeconds * 60;
+      if (gs.jumpTimer <= 0) {
+          gs.jumpTimer = 0;
+          // When jump ends, we effectively "catch up" by resetting the lastTimerTick
+          gs.lastTimerTick = Date.now();
+      }
+      return; // Skip everything while jumping
+  }
 
   // PROCESS TIMERS
   if (gs.currentPhase === 'COMBAT') {
@@ -69,7 +80,12 @@ function updateWave(room) {
   }
   
   // Scaling Difficulty Factors
-  const difficultyMultiplier = 1 + (gs.wave - 1) * 0.15; // +15% per wave
+  let diffSettingMult = 1.0;
+  if (room.settings?.difficulty === 'easy') diffSettingMult = 0.6;
+  if (room.settings?.difficulty === 'hard') diffSettingMult = 1.5;
+  if (room.settings?.difficulty === 'insane') diffSettingMult = 2.5;
+
+  const difficultyMultiplier = (1 + (gs.wave - 1) * 0.15) * diffSettingMult; // +15% per wave
   const playerFactor = 1 + (Math.max(1, room.players.size) - 1) * 0.25;
   
   // Enemy Spawning Logic
@@ -128,7 +144,7 @@ function updateWave(room) {
   
   // Check mission completion
   if (gs.waveTimer >= gs.waveDuration) {
-    if (gs.encounterType !== 'boss' && gs.encounterType !== 'merchant') {
+    if (gs.encounterType !== 'boss' && gs.encounterType !== 'merchant' && gs.encounterType !== 'escort') {
       endWave(room, false);
     }
   }
@@ -138,58 +154,32 @@ function updateWave(room) {
     gameOver(room, false);
   }
   
-  // Final Boss victory condition (Wave 15)
-  if (gs.encounterType === 'boss' && gs.wave >= 15 && gs.enemies.length === 0 && gs.waveTimer > 300) {
-    if (!room.isSinglePlayer && room.players.size > 1 && !gs.offeredPvp) {
-      gs.offeredPvp = true;
-      gs.currentPhase = 'NAVIGATION';
-      gs.navigationPhase = true;
-      gs.nodeVotes = {};
-      gs.navigationOptions = [
-        {
-          id: 'node_finish',
-          type: 'finish',
-          name: 'FINISH MISSION',
-          description: 'Return to base with honors.',
-          icon: '🏆',
-          votes: 0,
-          locked: false
-        },
-        {
-          id: 'node_pvp',
-          type: 'pvp',
-          name: 'PVP SHOWDOWN',
-          description: 'Settle the score. Last man standing.',
-          icon: '⚔️',
-          votes: 0,
-          locked: false
-        }
-      ];
-      if (room.broadcastToRoom) {
-        room.broadcastToRoom({
-          type: 'navigation_options',
-          options: gs.navigationOptions,
-          votes: {}
-        });
-        room.broadcastToRoom({
-          type: 'announcement',
-          text: 'MISSION ACCOMPLISHED',
-          sub: 'What is your next move?'
-        });
-      }
-    } else if (!gs.offeredPvp) {
-      gameOver(room, true);
-    }
-  }
+
 }
 
 function triggerSuperUpgrade(room) {
   const gs = room.gameState;
   gs.currentPhase = 'SUPER_UPGRADE';
   
+  const superOptions = [
+    { id: 'super_fire_rate', name: 'OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0 },
+    { id: 'super_homing', name: 'OMEGA TARGETING', desc: 'Max Homing and projectiles explode on impact.', cost: 0 },
+    { id: 'super_drones', name: 'DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0 },
+    { id: 'super_weapons', name: 'TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0 }
+  ];
+
   room.players.forEach(p => {
-    p.gold = (p.gold || 0) + 1500;
+    p.gold = (p.gold || 0) + 5000;
     p.superUpgradeSelected = false;
+    
+    // Give each player 2 random super options
+    const shuffled = [...superOptions].sort(() => Math.random() - 0.5);
+    p.pendingSuperUpgrades = shuffled.slice(0, 2);
+    
+    p.ws.send(JSON.stringify({
+      type: 'super_upgrade',
+      options: p.pendingSuperUpgrades
+    }));
   });
 
   if (room.broadcastToRoom) {
@@ -198,8 +188,8 @@ function triggerSuperUpgrade(room) {
     });
     room.broadcastToRoom({
       type: 'announcement',
-      text: 'FLAGSHIP DEFEATED',
-      sub: 'REWARD: +1500 GOLD'
+      text: 'BOSS DEFEATED',
+      sub: 'REWARD: +5000 GOLD & SUPER UPGRADE'
     });
   }
 }
@@ -252,9 +242,11 @@ function triggerNavigation(room) {
   
   const options = [];
   const nextWave = gs.wave + 1;
-  const isBossComing = (nextWave === 5 || nextWave === 10 || nextWave === 15);
   
-  if (isBossComing) {
+  const isForcedBoss = (nextWave === 10 || nextWave === 30 || nextWave === 50);
+  const isOptionalBoss = (nextWave > 50 && nextWave % 10 === 0);
+  
+  if (isForcedBoss) {
     options.push({
       id: 'node_boss',
       type: 'boss',
@@ -267,7 +259,8 @@ function triggerNavigation(room) {
     console.log(`[NAV] Boss wave approaching. Forcing boss node.`);
   } else {
     const nodeTypes = ['defense', 'escort', 'salvage', 'merchant'];
-    if (Math.random() < 0.25) nodeTypes.push('pvp');
+    if (Math.random() < 0.25 || isOptionalBoss) nodeTypes.push('pvp');
+    if (isOptionalBoss) nodeTypes.push('boss');
     
     const available = [...nodeTypes];
     for (let i = 0; i < 3; i++) {
@@ -364,24 +357,20 @@ function checkNavigationVotes(room) {
   const allVoted = totalVotes >= totalPlayers;
 
   if (maxVotes >= majority || allVoted) {
-    if (!gs.visitedNodes) gs.visitedNodes = [];
-    gs.visitedNodes.push(winner.type);
-    gs.nodesVisited++;
     selectNode(room, winner.type);
   }
 }
 
 function selectNode(room, nodeType) {
   const gs = room.gameState;
-  gs.navigationPhase = false;
-  gs.navigationOptions = null;
   
-  if (nodeType === 'finish') {
-    gameOver(room, true);
-    return;
+  // Trigger Jump Sequence
+  gs.jumpTimer = 120; // 2 seconds at 60 FPS
+  if (room.broadcastToRoom) {
+      room.broadcastToRoom({ type: 'nav_transition', nodeType: nodeType });
   }
-  
-  const validNodes = ['defense', 'escort', 'salvage', 'merchant', 'pvp', 'boss'];
+
+  const validNodes = ['defense', 'escort', 'salvage', 'merchant', 'pvp', 'boss', 'finish'];
   if (!validNodes.includes(nodeType)) {
     console.error(`[NAV] Invalid node selection: ${nodeType}. Defaulting to defense.`);
     nodeType = 'defense';
@@ -390,20 +379,21 @@ function selectNode(room, nodeType) {
   gs.encounterType = nodeType;
   console.log(`[NAV] Transitioning to: ${nodeType}`);
   
+  if (nodeType === 'finish') {
+    gameOver(room, true);
+    return;
+  }
+  
   if (nodeType === 'merchant') {
     gs.merchantVisited = true;
   }
   
-  if (room.broadcastToRoom) {
-    room.broadcastToRoom({ type: 'warp_start' });
-  }
-
   // Clear merchant ready status
   room.players.forEach(p => p.merchantReady = false);
   
   setTimeout(() => {
     triggerUpgradePhase(room, false);
-  }, 1000);
+  }, 2000);
 }
 
 function triggerUpgradePhase(room, isMidWave) {
@@ -496,15 +486,19 @@ function startSelectedNode(room, nodeType) {
     const { spawnMerchant } = require('./entityFactory');
     // Pool of powerful upgrades with scaling costs
     const upgradesPool = [
-      { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull', cost: Math.floor(400 * costMultiplier) },
-      { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts', cost: Math.floor(600 * costMultiplier) },
-      { id: 'hyper_drives', name: 'Hyper Drives', desc: '300% Move Speed for the entire fleet', cost: Math.floor(500 * costMultiplier) },
-      { id: 'homing_missiles', name: 'Homing Missiles', desc: 'All projectiles track enemies with high agility', cost: Math.floor(450 * costMultiplier) },
-      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 shield to mothership', cost: Math.floor(550 * costMultiplier) },
-      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for you', cost: Math.floor(400 * costMultiplier) },
-      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for you', cost: Math.floor(500 * costMultiplier) },
-      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for you', cost: Math.floor(350 * costMultiplier) },
-      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Weapons arc chain lightning on hit', cost: Math.floor(600 * costMultiplier) }
+      { id: 'titanium_hull', name: 'Titanium Hull', desc: '+1500 Mothership Max Hull. Stacks infinitely.', cost: Math.floor(400 * costMultiplier) },
+      { id: 'orbital_strike', name: 'Orbital Strike', desc: 'Mothership fires massive orbital blasts. Stacks reduce cooldown.', cost: Math.floor(600 * costMultiplier) },
+      { id: 'hyper_drives', name: 'Hyper Drives', desc: 'Boosts Move Speed for Drones, Mothership, and YOU. Stacks infinitely.', cost: Math.floor(500 * costMultiplier) },
+      { id: 'homing_missiles', name: 'Tracking Protocol', desc: 'Projectiles track targets. If you already have tracking, greatly improves cornering and re-tracking. Stacks infinitely.', cost: Math.floor(450 * costMultiplier) },
+      { id: 'quantum_shield', name: 'Quantum Shield', desc: '+1000 Shield to Mothership. Stacks infinitely.', cost: Math.floor(550 * costMultiplier) },
+      { id: 'double_projectiles', name: 'Twin Cannons', desc: 'x2 Projectiles per shot for YOU. Stacks infinitely.', cost: Math.floor(400 * costMultiplier) },
+      { id: 'double_damage', name: 'Dark Matter Core', desc: 'x2 Damage for YOU. Stacks infinitely.', cost: Math.floor(500 * costMultiplier) },
+      { id: 'rate_of_fire', name: 'Overclocked Relays', desc: '+50% Fire Rate for YOU. Stacks infinitely.', cost: Math.floor(350 * costMultiplier) },
+      { id: 'chain_lightning', name: 'Tesla Modulator', desc: 'Your weapons arc chain lightning on hit. Stacks infinitely.', cost: Math.floor(600 * costMultiplier) },
+      { id: 'shrapnel_burst', name: 'Shrapnel Burst', desc: 'Your projectiles explode into shrapnel on hit. Stacks infinitely.', cost: Math.floor(500 * costMultiplier) },
+      { id: 'cursed_relic', name: 'Cursed Relic', desc: 'x5 Damage, +5 Projectiles, but Halves your Fire Rate. Stacks infinitely.', cost: Math.floor(1500 * costMultiplier) },
+      { id: 'laser_weapon', name: 'Plasma Laser', desc: 'Converts weapon to Laser. Stacks increase range and collision width.', cost: Math.floor(600 * costMultiplier) },
+      { id: 'drone_overclock', name: 'Drone Overclock', desc: 'Significantly increases Drone & Mothership speed, but not yours.', cost: Math.floor(300 * costMultiplier) }
     ];
     // Shuffle and take first 5
     const shuffled = upgradesPool.sort(() => Math.random() - 0.5);
@@ -530,16 +524,23 @@ function startSelectedNode(room, nodeType) {
     });
   } else if (nodeType !== 'salvage') {
     const { spawnEnemy } = require('./entityFactory');
-    const isBossWave = gs.wave === 5 || gs.wave === 10 || gs.wave === 15;
+    const isBossWave = (gs.wave === 10 || gs.wave === 30 || gs.wave === 50) || (gs.wave > 50 && gs.wave % 10 === 0);
     
-    if (isBossWave) {
+    if (isBossWave || nodeType === 'boss') {
       // Spawn Boss
       const boss = spawnEnemy(room);
-      boss.radius = 120; // Massive boss
-      boss.maxHull = 3000 * (gs.wave / 5); // Reduced health
+      boss.radius = 120 + (gs.wave >= 50 ? 30 : 0); // Bigger at extreme
+      
+      let baseHealth = 3000 * (gs.wave / 10);
+      if (gs.wave >= 10) baseHealth *= 1.5; // Normal
+      if (gs.wave >= 30) baseHealth *= 2; // Hard
+      if (gs.wave >= 50) baseHealth *= 3; // Extreme
+      if (gs.wave > 50) baseHealth *= Math.pow(1.5, Math.floor((gs.wave - 50) / 10)); // Tankier every 10 after extreme
+      
+      boss.maxHull = baseHealth;
       boss.hull = boss.maxHull;
       boss.isBoss = true;
-      boss.aiType = 'boss_tactical'; // New AI type
+      boss.aiType = gs.wave >= 50 ? 'boss_extreme' : 'boss_tactical'; // Extreme AI spawns drones
       boss.patrolAxis = 'y';
       boss.patrolDir = 1;
       
@@ -673,40 +674,55 @@ function restartGame(room) {
 
 function triggerEndgameVoting(room) {
   const gs = room.gameState;
-  gs.currentPhase = 'ENDGAME_VOTE';
-  gs.endgameVotes = {};
+  gs.currentPhase = 'NAVIGATION';
+  gs.navigationPhase = true;
+  gs.nodeVotes = {};
   
+  gs.navigationOptions = [
+    {
+      id: 'node_finish',
+      type: 'finish',
+      name: 'FINISH MISSION',
+      description: 'Return to base with honors.',
+      icon: '🏆',
+      votes: 0,
+      locked: false
+    },
+    {
+      id: 'node_pvp',
+      type: 'pvp',
+      name: 'PVP SHOWDOWN',
+      description: 'Settle the score. Last man standing.',
+      icon: '⚔️',
+      votes: 0,
+      locked: false
+    },
+    {
+      id: 'node_continue',
+      type: 'defense', // Uses defense as the continue node
+      name: 'CONTINUE RUN',
+      description: 'Push further into the unknown.',
+      icon: '🚀',
+      votes: 0,
+      locked: false
+    }
+  ];
+
   if (room.broadcastToRoom) {
     room.broadcastToRoom({
-      type: 'endgame_vote_start',
-      text: 'VICTORY!',
-      sub: 'Choose your final path:'
+      type: 'navigation_options',
+      options: gs.navigationOptions,
+      votes: {}
+    });
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: 'BOSS DEFEATED',
+      sub: 'What is your next move?'
     });
   }
 }
 
-function triggerSuperUpgrade(room) {
-  const gs = room.gameState;
-  gs.currentPhase = 'SUPER_UPGRADE';
-  
-  const superOptions = [
-    { id: 'super_fire_rate', name: 'OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0 },
-    { id: 'super_homing', name: 'OMEGA TARGETING', desc: 'Max Homing and projectiles explode on impact.', cost: 0 },
-    { id: 'super_drones', name: 'DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0 },
-    { id: 'super_weapons', name: 'TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0 }
-  ];
 
-  // Give each player 2 random super options
-  room.players.forEach(p => {
-    const shuffled = [...superOptions].sort(() => Math.random() - 0.5);
-    p.pendingSuperUpgrades = shuffled.slice(0, 2);
-    
-    p.ws.send(JSON.stringify({
-      type: 'super_upgrade',
-      options: p.pendingSuperUpgrades
-    }));
-  });
-}
 
 module.exports = {
   updateWave,
