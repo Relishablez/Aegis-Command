@@ -248,7 +248,14 @@ function updatePlayer(p, room) {
       mine.homing = p.homing || 0;
       
       gs.projectiles.push(mine);
-      p.mineCooldown = 180 - minesLevel * 10; // Spawns faster with levels
+      const cooldownTime = Math.max(60, 300 - minesLevel * 30); // 5s base, -0.5s per level, min 1s
+      p.mineCooldown = cooldownTime;
+      p.mineMaxCooldown = cooldownTime;
+      
+      // Indicator for mine spawn
+      if (room.broadcastToRoom) {
+        room.broadcastToRoom({ type: 'pickup_text', x: p.x, y: p.y, text: 'MINE DEPLOYED', color: '#f1c40f', playerId: p.id });
+      }
     }
   }
   
@@ -655,6 +662,16 @@ function updateEnemies(room) {
         // Queue Mid-wave upgrade
         gs.pendingLevelUps = (gs.pendingLevelUps || 0) + 1;
         
+        // Level up announcement
+        if (room.broadcastToRoom) {
+          room.broadcastToRoom({ 
+            type: 'announcement', 
+            text: 'LEVEL UP!', 
+            sub: `TEAM LEVEL ${gs.teamLevel}`,
+            color: '#f1c40f'
+          });
+        }
+        
         // Bonus for leveling up (e.g. heal everyone)
         room.players.forEach(p => {
           if (p.alive) p.hull = Math.min(p.maxHull, p.hull + 10);
@@ -876,7 +893,9 @@ function updateProjectiles(room) {
       }
     }
     
-    if (b.life <= 0 || b.x < 0 || b.x > GAME_WIDTH || b.y < 0 || b.y > GAME_HEIGHT) {
+    // Boundary check with buffer to prevent premature clipping
+    const buffer = 400;
+    if (b.life <= 0 || b.x < -buffer || b.x > GAME_WIDTH + buffer || b.y < -buffer || b.y > GAME_HEIGHT + buffer) {
       gs.projectiles.splice(i, 1);
       continue;
     }
@@ -907,7 +926,9 @@ function updateProjectiles(room) {
       for (let j = gs.enemies.length - 1; j >= 0; j--) {
         const dx = b.x - e.x;
         const dy = b.y - e.y;
-        const hitRadius = (b.bulletSize || 1) * 5 + e.radius;
+        // Increased collision radius for mines to make them more reliable
+        const mineBonus = b.type === 'mine' ? 15 : 0;
+        const hitRadius = (b.bulletSize || 1) * 5 + e.radius + mineBonus;
         const hitRadiusSq = hitRadius * hitRadius;
         
         // OPTIMIZATION: Fast AABB check
