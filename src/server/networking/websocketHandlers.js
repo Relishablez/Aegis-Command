@@ -144,6 +144,18 @@ function setupWebSocketHandlers(wss, roomManager) {
           return;
         }
 
+        // Right click (for abilities)
+        if (msg.type === 'right_click') {
+          if (currentRoom && playerId) {
+            const player = currentRoom.players.get(playerId);
+            if (player) {
+              const { handleRightClick } = require('../game/gameLogic');
+              handleRightClick(player, currentRoom, msg.x, msg.y);
+            }
+          }
+          return;
+        }
+
         // Upgrade selection
         if (msg.type === 'upgrade_select') {
           if (currentRoom && playerId) {
