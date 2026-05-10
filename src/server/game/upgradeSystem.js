@@ -50,7 +50,8 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
 
   // Player Ship Upgrades
   if (upgradeId === 'fire_rate') {
-    player.fireRate = Math.max(2, 8 - level * 0.7);
+    const { PLAYER: playerConsts } = require('../config/constants');
+    player.fireRate = Math.max(2.0, playerConsts.FIRE_RATE - level * 1.5);
   } else if (upgradeId === 'speed') {
     player.speed = 4 + level * 0.5;
   } else if (upgradeId === 'multishot') {
@@ -87,6 +88,10 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
     gs.mothership.autoTurret = level;
   } else if (upgradeId === 'drone') {
     gs.drones.push(spawnDrone(gs.mothership));
+  } else if (upgradeId === 'support_drone') {
+    const drone = spawnDrone(gs.mothership);
+    drone.isSupport = true;
+    gs.drones.push(drone);
   } else if (upgradeId === 'drone_speed') {
     gs.droneFireRateBonus = (gs.droneFireRateBonus || 0) + 0.1;
   } else if (upgradeId === 'drone_damage') {
@@ -118,6 +123,8 @@ function applyUpgrade(room, playerId, upgradeId, force = false) {
     player.gold += 500;
   } else if (upgradeId === 'luck_boost_instant') {
     gs.dropRateBonus = (gs.dropRateBonus || 0) + 0.5;
+  } else if (upgradeId === 'fractal_shrapnel') {
+    player.fractalShrapnel = true;
   }
 
   // Update weapon preference if a weapon was bought
@@ -138,7 +145,7 @@ function generateUpgradeOptions(playerUpgrades = {}, pinnedIds = []) {
 
   const availableUpgrades = UPGRADES.filter(upgrade => {
     const currentLevel = playerUpgrades[upgrade.id] || 0;
-    return currentLevel < upgrade.max && !pinnedIds.includes(upgrade.id);
+    return currentLevel < upgrade.max && !pinnedIds.includes(upgrade.id) && upgrade.type !== 'omega';
   });
 
   // Shuffle and pick random upgrades
@@ -193,33 +200,46 @@ function recalculatePlayerStats(player, gs) {
   const homingLevel = upgrades['homing_missile'] || 0;
   const pulseLevel = upgrades['pulse_wave'] || 0;
 
-  player.fireRate = Math.max(2, 8 - frLevel * 0.7);
+  const { PLAYER: playerConsts } = require('../config/constants');
+  player.fireRate = Math.max(2.0, playerConsts.FIRE_RATE - frLevel * 1.5);
   player.damage = 1 + dmgLevel * 0.15;
   player.multiShot = 1 + msLevel;
   player.bulletSize = 1 + bsLevel * 0.3;
+  
+  if (player.multiShot >= 10) {
+    player.fireRate *= 1.5; // Natural reduction to prevent lag
+    player.fireRateWarning = true;
+  } else {
+    player.fireRateWarning = false;
+  }
+  
+  const speedLevel = upgrades['speed'] || 0;
+  player.pickupRange = speedLevel * 20;
 
-  // Default weapon type if none set
-  if (!player.weaponType) {
-    if (laserLevel > 0) player.weaponType = 'laser';
-    else if (homingLevel > 0) player.weaponType = 'homing_missile';
-    else if (pulseLevel > 0) player.weaponType = 'pulse_wave';
+  player.hasLaser = laserLevel > 0;
+  player.hasMissile = homingLevel > 0;
+  player.hasPulse = pulseLevel > 0;
+  player.hasDefault = !player.hasLaser && !player.hasMissile && !player.hasPulse;
+
+  // Keep weaponType for backward compatibility / icon if needed
+  if (!player.weaponType || player.hasDefault) {
+    if (player.hasLaser) player.weaponType = 'laser';
+    else if (player.hasMissile) player.weaponType = 'homing_missile';
+    else if (player.hasPulse) player.weaponType = 'pulse_wave';
     else player.weaponType = 'default';
   }
 
-  if (player.weaponType === 'laser') {
-    player.fireRate *= 1.1;
-    const totalLaserLevel = laserLevel + (player.merchantLaser || 0);
-    player.bulletSize = 0.15 + (totalLaserLevel * 0.1);
-    player.damage *= 1.8;
-    player.laserRange = 500 + (totalLaserLevel * 80);
-  } else if (player.weaponType === 'homing_missile') {
-    player.damage *= 1.5;
-    player.fireRate *= 1.4;
-  } else if (player.weaponType === 'pulse_wave') {
-    player.fireRate *= 1.5;
-    player.damage *= 2.5;
-    player.pulseArc = (Math.PI / 4) + (pulseLevel * (Math.PI * 1.75 / 10)); // Scaled arc up to ~360 deg
-  }
+  // Base stats that affect all weapons
+  const totalLaserLevel = laserLevel + (player.merchantLaser || 0);
+  player.laserRange = 500 + (totalLaserLevel * 80);
+  player.laserDamageMult = 1.8;
+  player.laserThickness = 0.15 + (totalLaserLevel * 0.1);
+
+  player.pulseArc = (Math.PI / 4) + (pulseLevel * (Math.PI * 1.75 / 10)); // Scaled arc up to ~360 deg
+  
+  if (player.hasLaser) player.fireRate *= 1.1;
+  if (player.hasMissile) player.fireRate *= 1.4;
+  if (player.hasPulse) player.fireRate *= 1.5;
 
   if (player.superFireRateActive) {
     player.fireRate *= 0.5;
@@ -231,6 +251,7 @@ function recalculatePlayerStats(player, gs) {
   }
   if (player.superHomingActive) {
     player.homing = 100;
+    player.superExplosive = true;
   }
 
   if (player.merchantMultiShot) player.multiShot *= player.merchantMultiShot;
@@ -240,8 +261,16 @@ function recalculatePlayerStats(player, gs) {
 
   player.ramSpikes = upgrades['ram_spikes'] || 0;
   player.shrapnel = upgrades['shrapnel'] || 0;
+  player.fractalShrapnel = player.fractalShrapnel || false;
   player.chainLightning = upgrades['chain_lightning'] || 0;
   player.mines = upgrades['mines'] || 0;
+
+  // Drone Global Bonuses
+  const droneSpeedLevel = upgrades['drone_speed'] || 0;
+  const droneDamageLevel = upgrades['drone_damage'] || 0;
+  gs.droneFireRateBonus = 1 + (droneSpeedLevel * 0.1);
+  gs.droneSpeedBonus = 1 + (droneSpeedLevel * 0.15);
+  gs.droneDamageBonus = 1 + (droneDamageLevel * 0.2);
 }
 
 module.exports = {
