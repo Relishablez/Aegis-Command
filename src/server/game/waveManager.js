@@ -68,7 +68,7 @@ function updateWave(room) {
             levels: gs.playerUpgrades[playerId] || {},
             options: player.pendingUpgrades,
             playerId: playerId,
-            pinnedId: player.pinnedUpgradeId
+            pinnedIds: player.pinnedIds
           }));
         }
       });
@@ -414,7 +414,7 @@ function triggerUpgradePhase(room, isMidWave) {
   room.players.forEach((player, playerId) => {
     player.upgradeReady = false;
     const playerUpgrades = gs.playerUpgrades[playerId] || {};
-    const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedUpgradeId);
+    const upgradeOptions = generateUpgradeOptions(playerUpgrades, player.pinnedIds);
     player.pendingUpgrades = upgradeOptions;
     
     player.ws.send(JSON.stringify({
@@ -423,7 +423,7 @@ function triggerUpgradePhase(room, isMidWave) {
       levels: playerUpgrades,
       options: upgradeOptions,
       playerId: playerId,
-      pinnedId: player.pinnedUpgradeId
+      pinnedIds: player.pinnedIds
     }));
   });
   
@@ -444,6 +444,22 @@ function startNextWave(room) {
   const gs = room.gameState;
   gs.waitingForUpgrade = false;
   gs.currentPhase = 'COMBAT';
+  
+  const skippedPlayers = [];
+  room.players.forEach((player) => {
+    if (!player.upgradeReady) {
+      player.upgradeReady = true;
+      skippedPlayers.push(player.name || `Player ${player.id.slice(-4)}`);
+    }
+  });
+
+  if (skippedPlayers.length > 0 && room.broadcastToRoom) {
+    room.broadcastToRoom({
+      type: 'announcement',
+      text: 'UPGRADE PHASE ENDED',
+      sub: `${skippedPlayers.join(', ')} missed their upgrade window!`
+    });
+  }
   
   if (!gs.isMidWaveUpgrade) {
     gs.wave++;
