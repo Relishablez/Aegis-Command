@@ -54,7 +54,7 @@ module.exports = {
   
   PROJECTILE: {
     SPEED: 15,
-    LIFE: 120,
+    LIFE: 240,
     RADIUS: 5
   },
   
