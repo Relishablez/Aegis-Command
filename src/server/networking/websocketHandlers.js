@@ -216,6 +216,18 @@ function setupWebSocketHandlers(wss, roomManager) {
           return;
         }
 
+        // Toggle pause (Single Player only)
+        if (msg.type === 'toggle_pause') {
+          if (currentRoom && currentRoom.isSinglePlayer) {
+            currentRoom.gameState.isPaused = !currentRoom.gameState.isPaused;
+            roomManager.broadcastToRoom(currentRoom, {
+              type: 'pause_state',
+              isPaused: currentRoom.gameState.isPaused
+            });
+          }
+          return;
+        }
+
         // Dev actions
         if (msg.type === 'dev_action') {
           if (currentRoom && playerId) {
