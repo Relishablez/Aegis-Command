@@ -145,6 +145,12 @@ class RoomManager {
     } else {
       room.gameState.playerUpgrades[playerId] = {};
     }
+
+    // Unpause if it was paused due to everyone leaving
+    if (room.gameState.isPaused && room.players.size === 0) {
+      room.gameState.isPaused = false;
+      console.log(`[SERVER] Room ${room.code} unpaused as a player joined.`);
+    }
     
     // Recalculate stats after applying all restorations
     const { recalculatePlayerStats } = require('../game/upgradeSystem');
@@ -190,13 +196,16 @@ class RoomManager {
       room.ownerId = room.players.keys().next().value;
     }
     
-    // Delete room if empty
+    // Pause room if empty
     if (room.players.size === 0) {
+      if (room.gameState) room.gameState.isPaused = true;
+      console.log(`[SERVER] Room ${room.code} paused (all players left). Waiting 5 minutes for re-entry.`);
+      
       setTimeout(() => {
         if (room.players.size === 0) {
           this.deleteRoom(room.code);
         }
-      }, ROOM_INACTIVITY_TIMEOUT);
+      }, 5 * 60 * 1000); // 5 minute hard cleanup
     }
   }
 
@@ -399,6 +408,16 @@ class RoomManager {
     const merchant = gs.merchants[merchantIndex];
     const upgrade = merchant.upgrade;
     
+    // Benefit Check
+    const { wouldBenefitFromUpgrade } = require('../game/upgradeSystem');
+    if (!wouldBenefitFromUpgrade(player, gs, upgrade.id)) {
+        player.ws.send(JSON.stringify({
+            type: 'error',
+            message: `SYSTEM LIMIT: Buying ${upgrade.name} would provide no further benefit.`
+        }));
+        return;
+    }
+
     if (player.gold >= upgrade.cost) {
       player.gold -= upgrade.cost;
       
@@ -422,7 +441,8 @@ class RoomManager {
       }
       if (upgrade.id === 'hyper_drives') {
         gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.15; // Speeds up Mothership and Drones
-        player.merchantSpeed = (player.merchantSpeed || 1.0) + 0.25; // Speeds up buyer
+        gs.playerHyperDrive = (gs.playerHyperDrive || 1.0) + 0.15; // Speeds up the buying player's ship too
+        player.merchantSpeed = (player.merchantSpeed || 1.0) + 0.25; // Individual buyer bonus on top
       }
       if (upgrade.id === 'quantum_shield') {
          gs.mothership.shieldMax = (gs.mothership.shieldMax || 0) + 1000;
@@ -442,11 +462,30 @@ class RoomManager {
         player.merchantFireRate = (player.merchantFireRate || 1) * 2; // Slower fire rate (value is multiplied to fireRate delay)
       }
       if (upgrade.id === 'drone_overclock') {
-        gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.5; // Only speeds up Drones & Mothership
+        gs.hyperDriveBoost = (gs.hyperDriveBoost || 1.0) + 0.5; // Only speeds up Drones & Mothership, NOT players
+        // Note: playerHyperDrive is intentionally NOT modified here
       }
       if (upgrade.id === 'laser_weapon') {
         player.weaponType = 'laser';
         player.merchantLaser = (player.merchantLaser || 0) + 1;
+      }
+      if (upgrade.id === 'omega_kamehameha') {
+        player.hasOmegaKamehameha = true;
+        player.weaponType = 'kamehameha';
+        
+        const upgrades = gs.playerUpgrades[playerId] || {};
+        const laserLevel = upgrades.laser || 0;
+        const multishotLevel = upgrades.multishot || 0;
+        const damageLevel = upgrades.damage || 0;
+        const speedLevel = upgrades.speed || 0;
+        
+        // Consume laser levels into power
+        player.kamehamehaPower = 1 + (laserLevel * 0.8) + (multishotLevel * 0.3) + (damageLevel * 0.5);
+        player.kamehamehaSpeed = 1 + (speedLevel * 0.1);
+        
+        // Clear laser upgrades as they are now merged into the beam
+        upgrades.laser = 0;
+        player.merchantLaser = 0;
       }
       
       const { recalculatePlayerStats } = require('../game/upgradeSystem');
@@ -543,7 +582,11 @@ class RoomManager {
 
   handleDevAction(room, playerId, action, data) {
     const player = room.players.get(playerId);
-    if (!player || !player.isDev) return;
+    if (!player) return;
+
+    // Allow dev actions if player is explicitly dev OR if they are the host (room owner)
+    const isHost = room.ownerId === playerId;
+    if (!player.isDev && !isHost) return;
 
     const gs = room.gameState;
     const { recalculatePlayerStats } = require('../game/upgradeSystem');
