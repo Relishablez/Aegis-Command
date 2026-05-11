@@ -19,6 +19,7 @@
   "license": "MIT",
   "dependencies": {
     "@azure/data-tables": "^13.3.2",
+    "compression": "^1.8.1",
     "express": "^4.18.2",
     "ws": "^8.14.2"
   },
