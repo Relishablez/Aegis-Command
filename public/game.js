@@ -296,6 +296,7 @@ let isDev = false;
 let compendiumData = [];
 let unlockedAchievements = JSON.parse(localStorage.getItem('aegis_achievements') || '[]');
 let floatingTexts = [];
+let particles = [];
 
 // Network Smoothing
 let stateHistory = [];
@@ -304,7 +305,7 @@ let renderState = null;
 let serverTimeOffset = 0;
 let ping = 0;
 let lastFrameTime = 0;
-const MAX_FPS = 160;
+const MAX_FPS = 60;
 const FRAME_MIN_TIME = 1000 / MAX_FPS;
 
 window.setFpsLimit = function(limit) {
@@ -326,8 +327,48 @@ function applyShake(amount) {
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Graphics Settings State
+window.graphicsSettings = {
+    vfxLimit: 500, // Reduced default for better performance
+    selfVfxOnly: false
+};
+
+function toggleSettingsModal() {
+    const modal = document.getElementById('settingsModal');
+    if (modal) {
+        modal.classList.toggle('hidden');
+        if (!modal.classList.contains('hidden')) {
+            // Sync VFX buttons
+            const limit = window.graphicsSettings.vfxLimit;
+            let btnId = 'vfx-mid';
+            if (limit <= 200) btnId = 'vfx-low';
+            else if (limit <= 500) btnId = 'vfx-mid';
+            else if (limit <= 800) btnId = 'vfx-high';
+            else btnId = 'vfx-max';
+            
+            const activeBtn = document.getElementById(btnId);
+            if (activeBtn && window.setVfxLevel) window.setVfxLevel(limit, activeBtn);
+
+            // Sync FPS Slider
+            const slider = document.getElementById('fpsLimitSlider');
+            if (slider) {
+                // If currentFrameMinTime is 0, it's unlimited (set to 245)
+                const currentFps = window.currentFrameMinTime === 0 ? 245 : Math.round(1000 / window.currentFrameMinTime);
+                slider.value = currentFps;
+                if (window.updateFpsDisplay) window.updateFpsDisplay(currentFps);
+            }
+        }
+        console.log("[SETTINGS] Panel toggled");
+    }
+}
+window.toggleSettingsModal = toggleSettingsModal;
+
 // Input handling
-const keys = { w: false, a: false, s: false, d: false, space: false };
+const keys = { w: false, a: false, s: false, d: false, q: false, space: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+
+// ESC Override
+
+
 let mouseX = 0;
 let mouseY = 0;
 let mouseDown = false;
@@ -547,13 +588,18 @@ function handleMessage(msg) {
             handleAchievementUnlocked(msg);
             break;
         case 'compendium_data':
-            compendiumData = msg.upgrades.sort((a, b) => a.name.localeCompare(b.name));
-            renderCompendium();
-            // Populate dev menu if it exists
-            const devSelect = document.getElementById('devUpgradeSelect');
-            if (devSelect && compendiumData) {
-                devSelect.innerHTML = compendiumData.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
-                updateDevUpgradeDescription();
+            if (msg.upgrades && Array.isArray(msg.upgrades)) {
+                compendiumData = msg.upgrades.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                renderCompendium();
+                // Populate dev menu if it exists
+                const devSelect = document.getElementById('devUpgradeSelect');
+                if (devSelect) {
+                    const currentVal = devSelect.value;
+                    devSelect.innerHTML = compendiumData.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+                    if (currentVal) devSelect.value = currentVal;
+                    devSelect.onchange = updateDevUpgradeDescription;
+                    updateDevUpgradeDescription();
+                }
             }
             break;
         case 'announcement':
@@ -573,6 +619,17 @@ function handleMessage(msg) {
             break;
         case 'error':
             handleError(msg);
+            break;
+        case 'dev_action_applied':
+            // Realtime update: fetch new state immediately
+            if (msg.playerId === playerId) {
+                // Flash the panel to show success
+                const panel = document.getElementById('devPanel');
+                if (panel) {
+                    panel.style.borderColor = '#2ecc71';
+                    setTimeout(() => panel.style.borderColor = '#e74c3c', 200);
+                }
+            }
             break;
         case 'super_upgrade':
             handleSuperUpgradeMenu(msg);
@@ -649,14 +706,36 @@ function handlePong(msg) {
 }
 
 function handlePickupEffect(msg) {
+    const cap = typeof window.graphicsSettings.vfxLimit === 'number' ? window.graphicsSettings.vfxLimit : 500;
+    if (particles.length > cap) return;
+    if (window.graphicsSettings.selfVfxOnly && msg.playerId !== playerId) return;
+
     floatingTexts.push({
         x: msg.x,
         y: msg.y,
         text: msg.text,
         color: msg.color || '#f1c40f',
         life: 120,
-        maxLife: 120
+        maxLife: 120,
+        vy: -1.5,
+        scale: 1.5,
+        isGlow: true
     });
+    
+    // Add some burst particles
+    for (let i = 0; i < 8; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 3;
+        particles.push({
+            x: msg.x,
+            y: msg.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 40 + Math.random() * 20,
+            color: msg.color || '#f1c40f',
+            size: 3 + Math.random() * 3
+        });
+    }
 }
 
 function lerp(a, b, t) {
@@ -891,6 +970,8 @@ function handleRoomCreated(msg) {
     isDev = msg.players.find(p => p.id === playerId)?.isDev || false;
     console.log(`[DEBUG] Room Created: ${roomCode}, PlayerID: ${playerId}, isDev: ${isDev}`);
     
+    const devPanel = document.getElementById('devPanel');
+    if (devPanel) devPanel.classList.toggle('hidden', !isDev);
     const devStatusEl = document.getElementById('devStatus');
     if (devStatusEl) devStatusEl.style.display = isDev ? 'block' : 'none';
     
@@ -926,6 +1007,8 @@ function handleRoomJoined(msg) {
     isDev = msg.players.find(p => p.id === playerId)?.isDev || false;
     console.log(`[DEBUG] Room Joined: ${roomCode}, PlayerID: ${playerId}, isDev: ${isDev}`);
     
+    const devPanel = document.getElementById('devPanel');
+    if (devPanel) devPanel.classList.toggle('hidden', !isDev);
     const devStatusEl = document.getElementById('devStatus');
     if (devStatusEl) devStatusEl.style.display = isDev ? 'block' : 'none';
     
@@ -984,7 +1067,7 @@ function updatePlayerList(players) {
 
 window.setFpsLimit = function(fps) {
     const val = parseInt(fps);
-    if (val >= 240) {
+    if (val >= 240 || val === 0) {
         window.currentFrameMinTime = 0; // Uncapped
     } else {
         window.currentFrameMinTime = 1000 / val;
@@ -1582,7 +1665,13 @@ function drawGame(gs) {
     const entityCap = window.isGraphicsOptimized ? 200 : 5000;
     
     // Draw projectiles
-    const bulletsToDraw = (gs.b || []).slice(0, entityCap);
+    let bulletsToDraw = (gs.b || []).slice(0, entityCap);
+    
+    // Self Effects Only Filter
+    if (window.graphicsSettings.selfVfxOnly) {
+        bulletsToDraw = bulletsToDraw.filter(b => b.ownerId === playerId || !b.friendly);
+    }
+
     bulletsToDraw.forEach(bullet => {
         ctx.save();
         ctx.translate(bullet.x, bullet.y);
@@ -1645,6 +1734,50 @@ function drawGame(gs) {
             ctx.moveTo(0, 0);
             ctx.lineTo(range, 0);
             ctx.stroke();
+            
+            ctx.restore();
+        } else if (bullet.type === 'kamehameha') {
+            const range = bullet.range || 1200;
+            const thickness = bullet.width || 40;
+            const alpha = (bullet.life / (bullet.maxLife || 20));
+            const isSparking = bullet.isSparking;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            
+            // Outer Massive Glow
+            ctx.shadowBlur = isSparking ? 40 : 30;
+            ctx.shadowColor = pColor || '#00f2ff';
+            ctx.strokeStyle = pColor || 'rgba(0, 242, 255, 0.8)';
+            ctx.lineWidth = thickness + (isSparking ? Math.random() * 10 : 0);
+            ctx.lineCap = 'round';
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(range, 0);
+            ctx.stroke();
+
+            // Inner Pulsing Core
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = thickness * 0.4;
+            ctx.shadowBlur = 0;
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(range, 0);
+            ctx.stroke();
+
+            // Sparking effects if holding
+            if (isSparking) {
+                for (let i = 0; i < 5; i++) {
+                    const sparkX = Math.random() * range;
+                    const sparkY = (Math.random() - 0.5) * thickness;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(sparkX, sparkY, 2 + Math.random() * 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
             
             ctx.restore();
         } else if (bullet.type === 'homing_missile') {
@@ -1728,6 +1861,32 @@ function drawGame(gs) {
             
             ctx.beginPath();
             ctx.arc(0, 0, radius, -arc/2, arc/2);
+            ctx.stroke();
+            
+            ctx.restore();
+        } else if (bullet.type === 'pulse_beam') {
+            const alpha = bullet.life / 40;
+            const radius = bullet.radius || 40;
+            
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            
+            // Outer Huge Glow
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = pColor || '#00f2ff';
+            ctx.strokeStyle = pColor || '#00f2ff';
+            ctx.lineWidth = 15;
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Inner Core
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 5;
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
             ctx.stroke();
             
             ctx.restore();
@@ -1871,19 +2030,51 @@ function drawGame(gs) {
         ctx.restore();
     });
     
+    // Entity Capping for Visuals (Optimization)
+    if (window.graphicsSettings.vfxLimit) {
+        if (floatingTexts.length > 200) floatingTexts = floatingTexts.slice(-200);
+        if (particles.length > 200) particles = particles.slice(-200);
+    }
+
     // Draw floating texts
     floatingTexts.forEach(ft => {
         ctx.save();
-        ctx.translate(ft.x, ft.y - (ft.maxLife - ft.life) * 0.5);
+        const floatY = (ft.maxLife - ft.life) * (ft.vy || 0.5);
+        ctx.translate(ft.x, ft.y + floatY);
         ctx.globalAlpha = ft.life / ft.maxLife;
-        ctx.fillStyle = ft.playerId === playerId ? '#f1c40f' : '#bdc3c7';
-        ctx.font = 'bold 16px Arial';
+        
+        if (ft.isGlow) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = ft.color;
+        }
+        
+        const scale = ft.scale || 1.0;
+        ctx.scale(scale, scale);
+        
+        ctx.fillStyle = ft.color || (ft.playerId === playerId ? '#f1c40f' : '#bdc3c7');
+        ctx.font = 'bold 16px Orbitron';
         ctx.textAlign = 'center';
         ctx.fillText(ft.text, 0, 0);
         ctx.restore();
         ft.life--;
     });
     floatingTexts = floatingTexts.filter(ft => ft.life > 0);
+
+    // Draw and update particles
+    particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.life / 60;
+        ctx.fillStyle = p.color || '#fff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size || 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        p.x += p.vx || 0;
+        p.y += p.vy || 0;
+        p.life--;
+    });
+    particles = particles.filter(p => p.life > 0);
 }
 
 // UI updates
@@ -2168,6 +2359,49 @@ function updateUI() {
                 });
                 window.lastPowerupState = { ...me.powerups };
             }
+
+            // Update Ability List (Blackhole/Mines)
+            const abilitiesList = document.getElementById('abilitiesList');
+            if (abilitiesList && me) {
+                let abHtml = '';
+                
+                // Blackhole Rift Status
+                if (me.hasRift) {
+                    const riftCooldownPercent = me.riftMaxCooldown > 0 ? (1 - (me.riftCooldown || 0) / me.riftMaxCooldown) * 100 : 100;
+                    const isReady = (me.riftCooldown || 0) <= 0;
+                    abHtml += `
+                        <div style="margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${isReady ? '#8e44ad' : '#7f8c8d'}; margin-bottom: 2px; font-weight: bold;">
+                                <span><i class="fas fa-vortex"></i> GRAVITY RIFT (Q)</span>
+                                <span>${isReady ? 'READY' : Math.ceil((me.riftCooldown || 0)/60) + 's'}</span>
+                            </div>
+                            <div style="height: 4px; background: rgba(0,0,0,0.3); border-radius: 2px; overflow: hidden; border: 1px solid ${isReady ? '#8e44ad' : '#34495e'};">
+                                <div style="height: 100%; width: ${riftCooldownPercent}%; background: #8e44ad; box-shadow: ${isReady ? '0 0 8px #8e44ad' : 'none'}; transition: width 0.1s linear;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Mine Status (if has upgrade)
+                if (me.upgradeLevels?.mines > 0) {
+                    const mineCooldownPercent = me.mineMaxCooldown > 0 ? (1 - (me.mineCooldown || 0) / me.mineMaxCooldown) * 100 : 100;
+                    const isReady = (me.mineCooldown || 0) <= 0;
+                    abHtml += `
+                        <div style="margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${isReady ? '#f39c12' : '#7f8c8d'}; margin-bottom: 2px; font-weight: bold;">
+                                <span><i class="fas fa-bomb"></i> PROXIMITY MINES</span>
+                                <span>${isReady ? 'READY' : Math.ceil((me.mineCooldown || 0)/60) + 's'}</span>
+                            </div>
+                            <div style="height: 4px; background: rgba(0,0,0,0.3); border-radius: 2px; overflow: hidden; border: 1px solid ${isReady ? '#f39c12' : '#34495e'};">
+                                <div style="height: 100%; width: ${mineCooldownPercent}%; background: #f39c12; box-shadow: ${isReady ? '0 0 8px #f39c12' : 'none'}; transition: width 0.1s linear;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                abilitiesList.innerHTML = abHtml;
+                abilitiesList.style.display = abHtml ? 'block' : 'none';
+            }
         }
     }
 
@@ -2386,6 +2620,10 @@ function showMerchantUI(merch, player) {
     const buyBtn = document.getElementById('buyMerchBtn');
     buyBtn.disabled = player.gold < cost;
     buyBtn.onclick = () => {
+        if (merch.upgrade.id === 'omega_kamehameha') {
+            const confirmed = confirm("CAUTION: OMEGA KAMEHAMEHA will PERMANENTLY REPLACE your existing Laser Beam. This is a massive upgrade but changes your weapon type. Proceed?");
+            if (!confirmed) return;
+        }
         ws.send(JSON.stringify({
             type: 'buy_merchant',
             merchantId: merch.id
@@ -2505,14 +2743,14 @@ function handleUpgradeMenu(msg) {
         const sameOptions = JSON.stringify(msg.options) === JSON.stringify(lastUpgradeMsg.options);
         const sameGold = msg.gold === lastUpgradeMsg.gold;
         const samePinned = JSON.stringify(msg.pinnedIds || []) === JSON.stringify(lastUpgradeMsg.pinnedIds || []);
-        if (sameOptions && sameGold && samePinned && !upgradeMenu.classList.contains('hidden') && optionsContainer.children.length > 0) {
+        if (!window.isSelectingUpgrade && sameOptions && sameGold && samePinned && !upgradeMenu.classList.contains('hidden') && optionsContainer.children.length > 0) {
             return; // Already rendering this exact state
         }
     }
     
     lastUpgradeMsg = msg;
     upgradeMenu.classList.remove('hidden');
-    upgradeMenu.style.display = 'block'; // Force display if hidden via inline style
+    upgradeMenu.style.display = 'block'; 
     optionsContainer.innerHTML = '';
     
     msg.options?.forEach(option => {
@@ -2888,6 +3126,10 @@ function renderCompendium() {
 
 // Game events
 function handleAnnouncement(msg) {
+    // Clear any existing announcements to prevent overlap
+    const existingAnnouncements = document.querySelectorAll('.announcement');
+    existingAnnouncements.forEach(el => el.remove());
+
     // Hide upgrade menu when a new wave starts (but not when it just ended)
     if (msg.text.startsWith('WAVE') && msg.text !== 'WAVE COMPLETE') {
         upgradeMenu.classList.add('hidden');
@@ -3035,6 +3277,7 @@ function setupInputHandlers() {
         if (e.key === 'ArrowDown') keys.ArrowDown = true;
         if (e.key === 'ArrowLeft') keys.ArrowLeft = true;
         if (e.key === 'ArrowRight') keys.ArrowRight = true;
+        if (e.key === 'q' || e.key === 'Q') keys.q = true;
         // Game-only Hotkeys
         if (!document.getElementById('lobby').classList.contains('hidden')) return;
 
@@ -3043,7 +3286,24 @@ function setupInputHandlers() {
             e.preventDefault();
             toggleStatusPanel();
         }
-        if (e.key === 'Escape') togglePauseMenu();
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            // Priority 1: Close full screen settings if open
+            const settingsModal = document.getElementById('settingsModal');
+            if (settingsModal && !settingsModal.classList.contains('hidden')) {
+                toggleSettingsModal();
+                return;
+            }
+
+            // Priority 2: Don't allow pausing if in mandatory menu
+            const upgradeMenu = document.getElementById('upgradeMenu');
+            if (upgradeMenu && !upgradeMenu.classList.contains('hidden')) return;
+            const navigationMenu = document.getElementById('navigationMenu');
+            if (navigationMenu && !navigationMenu.classList.contains('hidden')) return;
+
+            // Priority 3: Toggle pause menu
+            togglePauseMenu();
+        }
         if (e.key === '`') {
             console.log(`[DEBUG] Dev Panel Hotkey Pressed: ${e.key}`);
             e.preventDefault();
@@ -3086,6 +3346,7 @@ function setupInputHandlers() {
         if (e.key === 'ArrowDown') keys.ArrowDown = false;
         if (e.key === 'ArrowLeft') keys.ArrowLeft = false;
         if (e.key === 'ArrowRight') keys.ArrowRight = false;
+        if (e.key === 'q' || e.key === 'Q') keys.q = false;
         if (e.key === 'Shift') keys.shift = false;
         if (e.key === ' ') {
             keys.space = false;
@@ -3117,23 +3378,6 @@ function setupInputHandlers() {
         }
         
         mouseDown = true;
-        
-        // Merchant click check
-        if (gameState && gameState.merchants) {
-            for (let i = 0; i < gameState.merchants.length; i++) {
-                const merch = gameState.merchants[i];
-                const d = Math.hypot(mouseX - merch.x, mouseY - merch.y);
-                if (d < 50) { // Merchant hit radius
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({
-                            type: 'buy_merchant',
-                            merchantId: merch.id
-                        }));
-                    }
-                    break;
-                }
-            }
-        }
     });
     
     canvas.addEventListener('mouseup', () => {
@@ -3204,45 +3448,46 @@ window.addEventListener('load', () => {
 });
 
 function updateDevUpgradeDescription() {
-    const select = document.getElementById('devUpgradeSelect');
-    const desc = document.getElementById('devUpgradeDesc');
-    if (!select || !desc || !compendiumData) return;
-    
-    const upgrade = compendiumData.find(u => u.id === select.value);
+    const s = document.getElementById('devUpgradeSelect');
+    const d = document.getElementById('devUpgradeDesc');
+    if (!s || !d || !compendiumData) return;
+    const upgrade = compendiumData.find(u => u.id === s.value);
     if (upgrade) {
-        desc.innerHTML = `<strong>${upgrade.name}</strong> (MAX: ${upgrade.max})<br>${upgrade.description}`;
-        desc.style.borderLeftColor = '#e74c3c';
-        desc.style.display = 'block'; // Ensure visible
+        d.textContent = upgrade.description || upgrade.desc || 'No description available.';
     }
+}
+
+function sendDevAction(action, data = {}) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    console.log(`[DEV] Sending action: ${action}`, data);
+    ws.send(JSON.stringify({
+        type: 'dev_action',
+        action: action,
+        data: data
+    }));
 }
 
 function makeDraggable(el, handle) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    handle.onmousedown = dragMouseDown;
-
-    function dragMouseDown(e) {
+    handle.onmousedown = (e) => {
         e.preventDefault();
         pos3 = e.clientX;
         pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-    }
-
-    function elementDrag(e) {
-        e.preventDefault();
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        el.style.top = (el.offsetTop - pos2) + "px";
-        el.style.left = (el.offsetLeft - pos1) + "px";
-        el.style.transform = 'none'; // Remove centring transform once dragged
-    }
-
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-    }
+        document.onmouseup = () => {
+            document.onmouseup = null;
+            document.onmousemove = null;
+        };
+        document.onmousemove = (e) => {
+            e.preventDefault();
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            el.style.top = (el.offsetTop - pos2) + "px";
+            el.style.left = (el.offsetLeft - pos1) + "px";
+            el.style.transform = 'none';
+        };
+    };
 }
 
 // Global debug helper
@@ -3273,12 +3518,13 @@ function handleNavigationOptions(msg) {
     msg.options?.forEach(node => {
         const div = document.createElement('div');
         div.className = `upgrade-option ${node.locked ? 'locked' : ''}`;
-        div.style.flex = '1';
-        div.style.padding = '15px';
+        div.style.flex = '0 1 220px'; // Adaptive sizing
+        div.style.minWidth = '180px';
+        div.style.padding = '12px';
         div.style.cursor = node.locked ? 'not-allowed' : 'pointer';
-        div.style.border = node.locked ? '1px solid rgba(231, 76, 60, 0.5)' : '1px solid rgba(52, 152, 219, 0.3)';
+        div.style.border = node.locked ? '1px solid rgba(231, 76, 60, 0.5)' : '1px solid rgba(52, 152, 219, 0.4)';
         div.style.borderRadius = '8px';
-        div.style.background = node.locked ? 'rgba(231, 76, 60, 0.1)' : 'rgba(20, 20, 20, 0.5)';
+        div.style.background = node.locked ? 'rgba(231, 76, 60, 0.1)' : 'rgba(20, 20, 20, 0.7)';
         div.style.position = 'relative';
         div.style.transition = 'all 0.2s ease';
         div.style.opacity = node.locked ? '0.6' : '1';
@@ -3355,14 +3601,7 @@ function voteNode(nodeId) {
 }
 
 function handleWarpStart(msg) {
-    const overlay = document.getElementById('warpOverlay');
-    overlay.classList.remove('hidden');
-    overlay.style.opacity = '1';
-    
-    setTimeout(() => {
-        overlay.style.opacity = '0';
-        setTimeout(() => overlay.classList.add('hidden'), 500);
-    }, 1000);
+    // Instant transition - no visual overlay delay
 }
 
 function handleSuperUpgradeMenu(msg) {
@@ -3560,6 +3799,35 @@ handleGameOver = (msg) => {
     document.getElementById('endgameVoteModal').classList.add('hidden');
     originalHandleGameOver(msg);
 };
+
+// Draggable Dev Panel
+(function() {
+    const panel = document.getElementById('devPanel');
+    const handle = document.getElementById('devPanelHandle');
+    if (!panel || !handle) return;
+
+    let isDragging = false;
+    let offset = { x: 0, y: 0 };
+
+    handle.onmousedown = (e) => {
+        isDragging = true;
+        offset.x = e.clientX - panel.offsetLeft;
+        offset.y = e.clientY - panel.offsetTop;
+        panel.style.transform = 'none'; // Disable center transform once dragged
+    };
+
+    window.onmousemove = (e) => {
+        if (!isDragging) return;
+        panel.style.left = (e.clientX - offset.x) + 'px';
+        panel.style.top = (e.clientY - offset.y) + 'px';
+        panel.style.bottom = 'auto';
+        panel.style.right = 'auto';
+    };
+
+    window.onmouseup = () => {
+        isDragging = false;
+    };
+})();
 
 function sendDevAction(action, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
