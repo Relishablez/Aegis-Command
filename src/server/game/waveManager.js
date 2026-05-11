@@ -169,11 +169,18 @@ function triggerSuperUpgrade(room) {
   const gs = room.gameState;
   gs.currentPhase = 'SUPER_UPGRADE';
   
+  // Clear map before super upgrade appears
+  gs.enemies = [];
+  gs.asteroids = [];
+  gs.projectiles = [];
+  gs.pickups = [];
+  
   const superOptions = [
     { id: 'super_fire_rate', name: 'OMEGA: OVERCLOCK CORE', desc: 'Double your current Fire Rate and +100% Damage.', cost: 0, type: 'omega' },
     { id: 'super_homing', name: 'OMEGA: TARGETING MATRIX', desc: 'Max Tracking and projectiles explode on impact.', cost: 0, type: 'omega' },
     { id: 'super_drones', name: 'OMEGA: DRONE SWARM', desc: 'Double your current Drone count and triple their fire rate.', cost: 0, type: 'omega' },
-    { id: 'super_weapons', name: 'OMEGA: TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0, type: 'omega' }
+    { id: 'super_weapons', name: 'OMEGA: TITAN BATTERY', desc: 'Triple projectiles per shot and +200% Bullet Size.', cost: 0, type: 'omega' },
+    { id: 'omega_kamehameha', name: 'OMEGA KAMEHAMEHA', desc: 'REPLACES LASER: Massive, auto-tracking plasma beam of destruction.', cost: 0, type: 'omega' }
   ];
 
   room.players.forEach(p => {
@@ -248,6 +255,13 @@ function triggerNavigation(room) {
   gs.navigationPhase = true;
   gs.nodeVotes = {}; 
   
+  // Clear map entities
+  gs.enemies = [];
+  gs.asteroids = [];
+  gs.projectiles = [];
+  gs.pickups = [];
+  gs.merchants = [];
+  
   const options = [];
   const nextWave = gs.wave + 1;
   
@@ -292,6 +306,19 @@ function triggerNavigation(room) {
         votes: 0,
         locked: isLocked,
         lockReason: lockReason
+      });
+    }
+
+    // Add "FINISH MISSION" option every 10 waves
+    if (nextWave % 10 === 0 && !isForcedBoss) {
+      options.push({
+        id: 'node_finish',
+        type: 'finish',
+        name: 'FINISH MISSION',
+        description: 'Complete your run and return to base with your current rewards.',
+        icon: '🏆',
+        votes: 0,
+        locked: false
       });
     }
   }
@@ -372,7 +399,32 @@ function checkNavigationVotes(room) {
 function selectNode(room, nodeType) {
   const gs = room.gameState;
   
-  // Trigger Jump Sequence
+  if (gs.isJumping) return; // Prevent multiple triggers
+  gs.isJumping = true;
+
+  // 5-second countdown before jump
+  let countdown = 5;
+  const interval = setInterval(() => {
+    if (room.broadcastToRoom) {
+      room.broadcastToRoom({ 
+        type: 'announcement', 
+        text: `WARP IN ${countdown}...`, 
+        sub: `Preparing jump to ${nodeType.toUpperCase()}`
+      });
+    }
+    countdown--;
+    if (countdown < 0) {
+      clearInterval(interval);
+      finalizeNodeSelection(room, nodeType);
+    }
+  }, 1000);
+}
+
+function finalizeNodeSelection(room, nodeType) {
+  const gs = room.gameState;
+  gs.isJumping = false;
+  
+  // Trigger Jump Sequence (Visual only)
   gs.jumpTimer = 120; // 2 seconds at 60 FPS
   if (room.broadcastToRoom) {
       room.broadcastToRoom({ type: 'nav_transition', nodeType: nodeType });
@@ -399,9 +451,7 @@ function selectNode(room, nodeType) {
   // Clear merchant ready status
   room.players.forEach(p => p.merchantReady = false);
   
-  setTimeout(() => {
-    triggerUpgradePhase(room, false);
-  }, 500);
+  triggerUpgradePhase(room, false);
 }
 
 function triggerUpgradePhase(room, isMidWave) {
@@ -410,6 +460,15 @@ function triggerUpgradePhase(room, isMidWave) {
   gs.waitingForUpgrade = true;
   gs.isMidWaveUpgrade = isMidWave;
   gs.upgradeTimer = 0;
+  
+  // Only clear the map when it's a full wave-end upgrade (NOT a mid-wave level-up)
+  // Clearing on level-up removes enemies the players were fighting, reducing fun and XP opportunities.
+  if (!isMidWave) {
+    gs.enemies = [];
+    gs.asteroids = [];
+    gs.projectiles = [];
+    gs.pickups = [];
+  }
   
   room.players.forEach((player, playerId) => {
     player.upgradeReady = false;
