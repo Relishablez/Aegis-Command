@@ -15,15 +15,15 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [100,150,200,250,300,350,400,450,500,550],
-    description: 'Movement speed boost'
+    description: 'Movement speed boost. Max 10 levels.'
   },
   { 
     id: 'multishot', 
-    name: 'Spread Shot', 
+    name: 'Spread Shot (Projectiles)', 
     type: 'player', 
     max: 10, 
     costs: [150,200,300,400,500,600,700,800,900,1000],
-    description: 'Fire additional projectiles in a fan'
+    description: 'Fires additional projectiles in a fan. Max 10 levels (Max 10 total projectiles).'
   },
   { 
     id: 'shield', 
@@ -61,25 +61,25 @@ module.exports = [
     id: 'laser', 
     name: 'Laser Beam', 
     type: 'player', 
-    max: 5, 
-    costs: [1000, 1500, 2000, 2500, 3000],
-    description: 'Continuous energy beam. Upgrading increases damage, thickness, and range. Hitscan accuracy improves with tracking upgrades.'
+    max: 10, 
+    costs: [1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500],
+    description: 'Continuous energy beam. Max 10 levels. SYNERGY: Accuracy improves with Tracking upgrades.'
   },
   { 
     id: 'pulse_wave', 
-    name: 'Pulse Wave', 
+    name: 'Pulse Laser Wave', 
     type: 'player', 
     max: 10, 
     costs: [600, 800, 1000, 1200, 1500, 1800, 2100, 2400, 2700, 3000],
-    description: 'Fires an expanding energy arc. Upgrades increase damage and arc angle (up to 360°). Works with Spread Shot.'
+    description: 'Fires an expanding laser arc. Max 10 levels (Up to 360°). Works with Spread Shot.'
   },
   { 
     id: 'homing_missile', 
     name: 'Tracking Missiles', 
     type: 'player', 
-    max: 5, 
-    costs: [800, 1200, 1600, 2000, 2400],
-    description: 'Intrinsic tracking projectiles. SYNERGY: Your Tracking Shot upgrades allow these missiles to hit multiple targets before breaking.'
+    max: 10, 
+    costs: [800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4400],
+    description: 'Intrinsic tracking projectiles. Max 10 levels. SYNERGY: Tracking Shot upgrades allow more hits per missile.'
   },
   { 
     id: 'homing', 
@@ -87,7 +87,7 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Projectiles seek nearest enemies. Boosts Tracking Missile chain count.'
+    description: 'Projectiles seek nearest enemies. Max 10 levels. Boosts Tracking Missile chain count.'
   },
   { 
     id: 'explosive', 
@@ -245,7 +245,7 @@ module.exports = [
     type: 'player', 
     max: 10, 
     costs: [300,400,500,600,700,800,900,1000,1100,1200],
-    description: 'Deploy stationary mines. Upgrading reduces cooldown. At level 2+, mines gain intrinsic tracking. Synergizes with Tracking upgrades to seek enemies even faster.'
+    description: 'Deploy stationary mines. Max 10 levels. At level 2+, mines gain intrinsic tracking.'
   },
   
   // OMEGA Upgrades (Boss Drops)
@@ -255,7 +255,7 @@ module.exports = [
     type: 'omega',
     max: 1,
     costs: [0],
-    description: 'Double your current Fire Rate and +100% Damage.'
+    description: 'Double your current Fire Rate and +100% Damage. Stacks up to system caps.'
   },
   {
     id: 'super_homing',
@@ -290,5 +290,13 @@ module.exports = [
     max: 1,
     costs: [1500],
     description: 'Shrapnel fragments now also split into more fragments on impact! (Requires Shrapnel Rounds)'
+  },
+  {
+    id: 'omega_kamehameha',
+    name: 'OMEGA KAMEHAMEHA',
+    type: 'omega',
+    max: 1,
+    costs: [0],
+    description: 'REPLACES LASER: A super-powered, auto-tracking mighty laser beam. Focuses on nearest enemies on click; sparks them on hold. Consumes existing Laser Beam stacks to increase power significantly. Stacks up to Max Level 10.'
   }
 ];
