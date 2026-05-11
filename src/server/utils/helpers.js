@@ -25,7 +25,7 @@ function getDifficulty(wave, difficultySetting = 'normal') {
   if (difficultySetting === 'insane') { hMult = 2.5; sMult = 1.4; rMult = 0.5; }
   
   return {
-    enemySpeed: (1.5 + t * 2.5) * sMult,
+    enemySpeed: (1.5 + Math.sqrt(t) * 2.0) * sMult, // Use sqrt for non-linear, controlled growth
     asteroidSpeed: 0.8 + t * 1.5,
     spawnRate: Math.max(10, (70 - t * 50) * rMult),
     enemyHealth: Math.max(1, (1 + Math.floor(t * 4)) * hMult),
@@ -54,6 +54,19 @@ function verifyPassword(password, hash) {
   return hashPassword(password) === hash;
 }
 
+function isPointOnLine(px, py, x1, y1, x2, y2, tolerance) {
+  const lineDist = dist({ x: x1, y: y1 }, { x: x2, y: y2 });
+  if (lineDist === 0) return dist({ x: px, y: py }, { x: x1, y: y1 }) <= tolerance;
+  
+  const t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / (lineDist * lineDist);
+  const clampedT = Math.max(0, Math.min(1, t));
+  
+  const closestX = x1 + clampedT * (x2 - x1);
+  const closestY = y1 + clampedT * (y2 - y1);
+  
+  return dist({ x: px, y: py }, { x: closestX, y: closestY }) <= tolerance;
+}
+
 module.exports = {
   dist,
   angle,
@@ -61,5 +74,6 @@ module.exports = {
   getDifficulty,
   generateRoomCode,
   hashPassword,
-  verifyPassword
+  verifyPassword,
+  isPointOnLine
 };
