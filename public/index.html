@@ -5,9 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aegis Command - Cooperative Space Defense</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Performance Optimizations -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Non-render-blocking font and icon loading -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'" />
     <style>
+        /* Force font swap for performance */
+        @font-face { font-display: swap; }
+        * { font-display: swap !important; }
         * {
             margin: 0;
             padding: 0;
@@ -38,8 +45,13 @@
             border: 2px solid #2c3e50;
             background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a0a 100%);
             box-shadow: 0 0 50px rgba(52, 152, 219, 0.3);
-            max-width: 100%;
-            max-height: 100vh;
+            width: 100%;
+            height: 100%;
+            max-width: 1600px;
+            max-height: 900px;
+            display: block;
+            margin: auto;
+            aspect-ratio: 16 / 9;
         }
 
         #ui {
@@ -217,6 +229,7 @@
             transform: translate(-50%, -50%);
             text-align: center;
             pointer-events: none;
+            z-index: 99999;
             animation: fadeInOut 2s ease-in-out;
         }
 
@@ -255,6 +268,24 @@
             }
         }
 
+        .modal-enter {
+            opacity: 1;
+        }
+
+        #warpOverlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 10000;
+            transition: opacity 0.5s ease;
+        }
+
+        .warp-active {
+            opacity: 1 !important;
+        }
+
         #lobby {
             position: absolute;
             top: 0;
@@ -274,9 +305,26 @@
             border: 2px solid #3498db;
             border-radius: 15px;
             padding: 40px;
-            max-width: 400px;
-            width: 90%;
+            max-width: 450px;
+            width: 95%;
+            max-height: 90vh;
+            overflow-y: auto;
             box-shadow: 0 0 30px rgba(52, 152, 219, 0.3);
+            scrollbar-width: thin;
+            scrollbar-color: #3498db #0a0a0a;
+        }
+
+        .lobby-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .lobby-content::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+
+        .lobby-content::-webkit-scrollbar-thumb {
+            background-color: #3498db;
+            border-radius: 10px;
         }
 
         .lobby-content h1 {
@@ -467,6 +515,8 @@
         #upgradeMenu,
         #superUpgradeMenu {
             position: absolute;
+            top: 50%;
+            left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(10, 10, 10, 0.95);
             border: 3px solid #3498db;
@@ -475,7 +525,7 @@
             text-align: center;
             pointer-events: auto;
             backdrop-filter: blur(10px);
-            z-index: 100;
+            z-index: 2000;
             box-shadow: 0 0 100px rgba(52, 152, 219, 0.5);
             min-width: 600px;
         }
@@ -686,6 +736,8 @@
 
                     <div id="vitalsList"></div>
                     
+                    <div id="abilitiesList" style="margin-top: 15px; border-top: 1px solid rgba(52, 152, 219, 0.2); padding-top: 10px;"></div>
+                    
                     <div id="powerupNotifications" style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;"></div>
                 <div id="roomCodeDisplay" class="room-code-display hidden"
                     style="position: absolute; top: 20px; right: 20px; z-index: 500; background: rgba(0,0,0,0.6); padding: 5px 15px; border: 1px solid #3498db; border-radius: 5px; font-weight: bold; color: #3498db; font-family: Orbitron;">
@@ -698,18 +750,28 @@
                 <!-- Bottom Left: ESC Hint and Fleet Status -->
                 <div style="position: absolute; bottom: 15px; left: 15px; z-index: 400; display: flex; flex-direction: column; gap: 8px; opacity: 0.7;">
                     <div id="escMenuHint" style="color: #e74c3c; font-size: 9px; font-weight: bold; letter-spacing: 1px; animation: pulse-red 2s infinite;">[ESC] MENU</div>
-                    <button id="toggleStatusBtn" class="btn" style="
-                            padding: 8px 15px; font-size: 12px; 
-                            background: rgba(52, 152, 219, 0.1);
-                            border: 1px solid rgba(52, 152, 219, 0.4);
-                            color: #3498db;
-                            backdrop-filter: blur(5px);
-                            font-weight: bold;
-                        ">FLEET STATUS</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="toggleStatusBtn" class="btn" style="
+                                padding: 8px 15px; font-size: 11px; 
+                                background: rgba(52, 152, 219, 0.1);
+                                border: 1px solid rgba(52, 152, 219, 0.4);
+                                color: #3498db;
+                                backdrop-filter: blur(5px);
+                                font-weight: bold;
+                            ">FLEET STATUS</button>
+                        <button onclick="toggleSettingsModal()" class="btn" style="
+                                padding: 8px 15px; font-size: 11px; 
+                                background: rgba(149, 165, 166, 0.1);
+                                border: 1px solid rgba(149, 165, 166, 0.4);
+                                color: #bdc3c7;
+                                backdrop-filter: blur(5px);
+                                font-weight: bold;
+                            ">SETTINGS</button>
+                    </div>
                 </div>
 
                 <!-- Bottom Center: Current Mission -->
-                <div class="mission-status-container hidden" style="position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 400; display: flex; flex-direction: column; align-items: center; gap: 8px; background: rgba(0,0,0,0.15); padding: 10px 20px; border-radius: 12px; border: 1px solid rgba(241, 196, 15, 0.15); backdrop-filter: blur(8px);">
+                <div class="mission-status-container hidden" style="position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px; background: rgba(0,0,0,0.15); padding: 10px 20px; border-radius: 12px; border: 1px solid rgba(241, 196, 15, 0.15); backdrop-filter: blur(8px);">
                     <div style="display: flex; align-items: center; gap: 12px; width: 100%; justify-content: center;">
                         <div style="color: #f1c40f; font-weight: bold; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.7;">Current Mission</div>
                         <div id="encounterTypeBottom" style="font-size: 16px; font-weight: 900; color: white; text-transform: uppercase; border-left: 2px solid #f1c40f; padding-left: 10px; font-family: 'Orbitron', sans-serif; letter-spacing: 1px;">DEFENSE WAVE</div>
@@ -725,7 +787,7 @@
 
                 <!-- Bottom Right: System Monitor -->
                 <div id="debugMonitor"
-                    style="position: absolute; bottom: 15px; right: 15px; z-index: 400; background: rgba(10, 10, 10, 0.2); border: 1px solid rgba(52, 152, 219, 0.15); border-radius: 6px; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3498db; pointer-events: none; width: 180px; backdrop-filter: blur(4px);">
+                    style="position: absolute; bottom: 15px; right: 15px; z-index: 400; background: rgba(10, 10, 10, 0.2); border: 1px solid rgba(52, 152, 219, 0.15); border-radius: 6px; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3498db; pointer-events: none; width: 180px; height: 100px; backdrop-filter: blur(4px);">
                     <div style="border-bottom: 1px solid rgba(52, 152, 219, 0.2); margin-bottom: 6px; font-weight: bold; letter-spacing: 1px; color: #ecf0f1; font-size: 13px;">SYSTEM MONITOR</div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
                         <div style="color: #7f8c8d; font-size: 11px;">PHASE:</div><div id="debugPhase" style="color: #3498db; font-size: 11px;">COMBAT</div>
@@ -774,8 +836,7 @@
 
                 <div class="form-group">
                     <label for="roomCode">Room Code</label>
-                    <input type="text" id="roomCode" placeholder="Enter 4-letter code" maxlength="4"
-                        style="text-transform: uppercase;">
+                    <input type="text" id="roomCode" placeholder="Enter 4-letter code" maxlength="4" style="text-transform: uppercase;">
                 </div>
 
                 <div class="form-group">
@@ -785,73 +846,69 @@
 
                 <div class="form-group">
                     <label for="roomMaxPlayers">Max Players (1-8)</label>
-                    <input type="number" id="roomMaxPlayers" value="8" min="1" max="8"
-                        style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
+                    <input type="number" id="roomMaxPlayers" value="8" min="1" max="8" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
+                </div>
+
+                <div class="form-group">
+                    <label for="fpsLimit">Performance Limit (<span id="fpsValue">60</span> FPS)</label>
+                    <input type="range" id="fpsLimit" min="30" max="240" value="60" step="10" oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value);" style="width: 100%;">
                 </div>
 
                 <details style="margin-bottom: 20px; color: #bdc3c7; font-size: 14px;">
-                    <summary style="cursor: pointer; padding: 5px 0; color: #3498db; font-weight: bold;">Advanced
-                        Host Settings (Create Room Only)</summary>
-                    <div
-                        style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;">
+                    <summary style="cursor: pointer; padding: 10px 0; color: #3498db; font-weight: bold; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <i class="fas fa-sliders-h"></i> ADVANCED HOST SETTINGS
+                    </summary>
+                    <div style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;">
                         <div class="form-group" style="margin-bottom: 15px;">
-                            <label for="difficulty" style="font-size: 12px;">Difficulty</label>
-                            <select id="difficulty"
-                                style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 8px; width: 100%; margin-top: 5px;">
-                                <option value="easy">Recruit (Easy)</option>
-                                <option value="normal" selected>Captain (Normal)</option>
-                                <option value="hard">Admiral (Hard)</option>
-                                <option value="insane">Aegis (Insane)</option>
+                            <label for="difficulty" style="font-size: 12px;">Difficulty Level</label>
+                            <select id="difficulty" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 10px; width: 100%; margin-top: 5px;">
+                                <option value="easy">Recruit (60% HP, 80% Speed)</option>
+                                <option value="normal" selected>Captain (Standard)</option>
+                                <option value="hard">Admiral (150% HP, 120% Speed)</option>
+                                <option value="insane">Aegis (250% HP, 140% Speed)</option>
                             </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label for="waveDuration" style="font-size: 12px;">Wave Duration (Seconds)</label>
-                            <input type="number" id="waveDuration" value="60" min="10" max="300"
-                                style="padding: 8px; margin-top: 5px;">
+                            <input type="number" id="waveDuration" value="60" min="10" max="300" style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
-                            <label for="damageMultiplier" style="font-size: 12px;">Enemy Damage/Health
-                                Multiplier</label>
-                            <input type="number" id="damageMultiplier" value="1.0" step="0.1" min="0.1" max="5.0"
-                                style="padding: 8px; margin-top: 5px;">
+                            <label for="damageMultiplier" style="font-size: 12px;">Enemy Multiplier (Damage/HP)</label>
+                            <input type="number" id="damageMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label for="goldMultiplier" style="font-size: 12px;">Gold Gain Multiplier</label>
-                            <input type="number" id="goldMultiplier" value="1.0" step="0.1" min="0.1" max="5.0"
-                                style="padding: 8px; margin-top: 5px;">
+                            <label for="goldMultiplier" style="font-size: 12px;">Gold Multiplier</label>
+                            <input type="number" id="goldMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                     </div>
                 </details>
 
-                <div class="button-group">
-                    <button class="btn" onclick="joinRoom()">Join Room</button>
-                    <button class="btn btn-secondary" onclick="createRoom()">Create Room</button>
+                <div class="button-group" style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button class="btn" onclick="joinRoom()" style="flex: 1;">Join Room</button>
+                    <button class="btn btn-secondary" onclick="createRoom()" style="flex: 1;">Create Room</button>
                 </div>
 
-                <div class="button-group">
-                    <button class="btn" onclick="playSinglePlayer()">Single Player</button>
+                <div class="button-group" style="margin-bottom: 15px;">
+                    <button class="btn" onclick="playSinglePlayer()" style="width: 100%; background: #2ecc71;">START SINGLE PLAYER</button>
                 </div>
 
-                <div class="button-group">
-                    <button class="btn btn-secondary" onclick="showCompendium()">Upgrade Compendium</button>
-                    <button class="btn btn-secondary" onclick="showAchievements()">Achievements</button>
+                <div class="button-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                    <button class="btn btn-secondary" onclick="toggleSettingsModal()" title="System Settings">
+                        <i class="fas fa-sliders-h"></i> SETTINGS
+                    </button>
+                    <button class="btn btn-secondary" onclick="showCompendium()">
+                        <i class="fas fa-book"></i> UPGRADES
+                    </button>
+                    <button class="btn btn-secondary" onclick="showAchievements()">
+                        <i class="fas fa-trophy"></i> TROPHIES
+                    </button>
+                    <button class="btn btn-secondary" onclick="showLeaderboard()">
+                        <i class="fas fa-crown"></i> HALL
+                    </button>
                 </div>
 
-                <!-- Inline Error Display                        <div id="maxPlayersWarning"
-                            style="color: #e74c3c; font-size: 12px; margin-top: 5px; display: none;">Warning: Playing
-                            with more than 4 players can be inconsistent and cause stability issues!</div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="fpsLimit">Performance Limit (<span id="fpsValue">160</span> FPS)</label>
-                        <input type="range" id="fpsLimit" min="30" max="240" value="160" step="10" oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const pf = document.getElementById('pauseFpsLimit'); if(pf){pf.value=this.value; document.getElementById('pauseFpsValue').textContent=this.value;}" style="width: 100%;">
-                    </div>
-
-                    <!-- Inline Error Display -->
-                <div id="lobbyError"
-                    style="color: #e74c3c; font-size: 13px; margin-top: 15px; text-align: center; height: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);">
-                </div>
-                <div id="wipNotice" style="color: #f39c12; font-size: 11px; margin-top: 10px; text-align: center;">Notice: Having more than 10 different types of items on screen may cause lags and issues - WIP</div>
+                <div id="lobbyError" style="color: #e74c3c; font-size: 13px; margin-top: 15px; text-align: center; min-height: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);"></div>
+                <div id="wipNotice" style="color: #f39c12; font-size: 10px; margin-top: 10px; text-align: center; opacity: 0.8;">Note: High entity counts (>200) may impact performance on some devices.</div>
             </div>
 
             <div id="roomInfo" class="hidden">
@@ -961,16 +1018,16 @@
             style="margin-top: 30px; width: 100%;">Close</button>
     </div>
 
-    <!-- Galaxy Navigation (Less intrusive map design) -->
+    <!-- Galaxy Navigation (Adaptive design) -->
     <div id="navigationMenu" class="hidden"
-        style="position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%); background: rgba(10, 10, 10, 0.9); border: 1px solid rgba(52, 152, 219, 0.5); border-radius: 10px; padding: 20px; z-index: 200; width: 600px; backdrop-filter: blur(5px); box-shadow: 0 0 30px rgba(0,0,0,0.5);">
+        style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(10, 10, 10, 0.9); border: 1px solid rgba(52, 152, 219, 0.5); border-radius: 10px; padding: 15px 25px; z-index: 2500; width: auto; min-width: 280px; max-width: 90vw; backdrop-filter: blur(8px); box-shadow: 0 0 30px rgba(0,0,0,0.8); border: 2px solid rgba(52, 152, 219, 0.6);">
         <div
             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid rgba(52, 152, 219, 0.3); padding-bottom: 10px;">
             <h3 style="color: #3498db; font-size: 18px; margin: 0; text-transform: uppercase; letter-spacing: 2px;">
                 Galaxy Route Selection</h3>
             <div id="navStatus" style="font-size: 12px; color: #bdc3c7;">Waiting for consensus...</div>
         </div>
-        <div id="nodeOptions" style="display: flex; justify-content: space-between; gap: 15px;">
+        <div id="nodeOptions" style="display: flex; justify-content: center; gap: 15px;">
             <!-- Nodes -->
         </div>
     </div>
@@ -1165,10 +1222,13 @@
                 </label>
             </div>
             <button class="btn" onclick="togglePauseMenu()">Resume</button>
+            <button class="btn btn-secondary" onclick="toggleSettingsModal()" style="border-color: #3498db; color: #3498db; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <i class="fas fa-cog"></i> GRAPHICS SETTINGS
+            </button>
             <div class="form-group" style="text-align: left;">
                 <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span
-                        id="pauseFpsValue">160</span> FPS)</label>
-                <input type="range" id="pauseFpsLimit" min="30" max="240" value="160" step="10"
+                        id="pauseFpsValue">60</span> FPS)</label>
+                <input type="range" id="pauseFpsLimit" min="30" max="240" value="60" step="10"
                     oninput="document.getElementById('pauseFpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const lf = document.getElementById('fpsLimit'); if(lf){lf.value=this.value; document.getElementById('fpsValue').textContent=this.value;}"
                     style="width: 100%;">
             </div>
@@ -1300,6 +1360,8 @@
                 style="font-size: 11px; color: #ecf0f1; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; min-height: 30px; border-left: 2px solid #e74c3c;">
                 Select an upgrade to see details...</div>
         </div>
+        <button class="btn" onclick="ws.send(JSON.stringify({ type: 'get_compendium' }))"
+            style="width: 100%; padding: 5px; font-size: 10px; margin-top: 10px; background: #34495e;">REFRESH UPGRADE LIST</button>
         <div style="font-size: 9px; color: #7f8c8d; text-align: center; margin-top: 10px;">Note: Upgrades are applied
             instantly and can be stacked multiple times.</div>
     </div>
@@ -1310,12 +1372,99 @@
             <h2 style="color: #e74c3c; margin-bottom: 10px; font-family: Orbitron;">CORE SYSTEM FAILURE</h2>
             <p style="color: #bdc3c7; margin-bottom: 20px;">An unexpected error has occurred and the game has crashed. Please copy the log below and report it to the developers.</p>
             <div id="crashLogDisplay" style="background: #000; color: #2ecc71; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; text-align: left; max-height: 200px; overflow-y: auto; margin-bottom: 25px; border: 1px solid #333;"></div>
-            <div style="display: flex; gap: 15px; justify-content: center;">
-                <button class="btn" onclick="copyCrashLog()" style="background: #3498db;">COPY LOG</button>
-                <button class="btn" onclick="location.reload()" style="background: #2ecc71;">RESTART GAME</button>
             </div>
         </div>
     </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 20000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+        <div class="glass-panel" style="width: 420px; padding: 30px; border-radius: 15px; border: 2px solid #3498db; pointer-events: auto;">
+            <h2 style="color: #3498db; text-align: center; margin-bottom: 25px; font-family: 'Orbitron', sans-serif;">GRAPHICS SETTINGS</h2>
+            
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">VFX QUALITY (ENTITY CAP)</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
+                    <button class="btn btn-secondary vfx-btn" id="vfx-low" onclick="setVfxLevel(200, this)" style="padding: 10px 5px; font-size: 10px;">LOW (200)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-mid" onclick="setVfxLevel(500, this)" style="padding: 10px 5px; font-size: 10px;">MID (500)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-high" onclick="setVfxLevel(800, this)" style="padding: 10px 5px; font-size: 10px;">HIGH (800)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-max" onclick="setVfxLevel(5000, this)" style="padding: 10px 5px; font-size: 10px;">MAX (∞)</button>
+                </div>
+                <p style="font-size: 10px; color: #7f8c8d; margin-top: 5px;">Limits particles & text popups. High settings may impact FPS in late waves.</p>
+            </div>
+
+            <div class="form-group" style="margin-top: 20px;">
+                <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; pointer-events: auto;">
+                    <span>SELF EFFECTS ONLY</span>
+                    <input type="checkbox" id="selfVfxOnlyToggle" onchange="if(window.graphicsSettings) window.graphicsSettings.selfVfxOnly = this.checked;" style="width: 20px; height: 20px;">
+                </label>
+                <p style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">Only show your own projectiles and effects for maximum clarity.</p>
+            </div>
+
+            <div class="form-group" style="margin-top: 25px;">
+                <label style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">FPS LIMIT: <span id="fpsLimitValue">60 FPS</span></label>
+                <input type="range" id="fpsLimitSlider" min="30" max="245" value="60" step="5" 
+                    oninput="updateFpsDisplay(this.value)" 
+                    style="width: 100%; cursor: pointer;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #7f8c8d; margin-top: 5px;">
+                    <span>30</span>
+                    <span>60</span>
+                    <span>120</span>
+                    <span>240</span>
+                    <span>∞</span>
+                </div>
+            </div>
+
+            <button class="btn" onclick="toggleSettingsModal()" style="width: 100%; margin-top: 30px; pointer-events: auto; background: linear-gradient(135deg, #3498db, #2980b9);">APPLY & CLOSE</button>
+        </div>
+    </div>
+
+    <!-- Crash Recovery Overlay -->
+    <div id="crashModal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px);">
+        <div class="glass-panel" style="width: 90%; max-width: 700px; padding: 40px; border: 1px solid #e74c3c; box-shadow: 0 0 50px rgba(231, 76, 60, 0.3);">
+            <div style="color: #e74c3c; font-size: 24px; font-weight: 900; letter-spacing: 2px; margin-bottom: 20px; text-align: center;">CORE SYSTEM FAILURE</div>
+            <p style="color: #bdc3c7; font-size: 14px; margin-bottom: 25px; line-height: 1.6; text-align: center;">An unexpected error has occurred and the game has crashed. Please copy the log below and report it to the developers.</p>
+            <div id="crashLogDisplay" style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px; border: 1px solid #444; color: #2ecc71; font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 30px;"></div>
+            <div style="display: flex; gap: 15px;">
+                <button class="btn" onclick="copyCrashLog()" style="flex: 1; background: #2ecc71;">COPY LOG</button>
+                <button class="btn" onclick="location.reload()" style="flex: 1; background: #3498db;">RESTART CORE</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.setVfxLevel = function(cap, btn) {
+            if (window.graphicsSettings) {
+                window.graphicsSettings.vfxLimit = cap;
+                window.isGraphicsOptimized = true;
+            }
+            // Update UI feedback
+            document.querySelectorAll('.vfx-btn').forEach(b => {
+                b.style.background = 'rgba(255, 255, 255, 0.05)';
+                b.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                b.style.color = '#bdc3c7';
+                b.style.boxShadow = 'none';
+            });
+            
+            if (btn) {
+                btn.style.background = 'rgba(52, 152, 219, 0.2)';
+                btn.style.borderColor = '#3498db';
+                btn.style.color = '#fff';
+                btn.style.boxShadow = '0 0 15px rgba(52, 152, 219, 0.3)';
+            }
+        };
+
+        window.updateFpsDisplay = function(val) {
+            const display = document.getElementById('fpsLimitValue');
+            if (!display) return;
+            if (val > 240) {
+                display.textContent = 'Unlimited';
+                if (window.setFpsLimit) window.setFpsLimit(0);
+            } else {
+                display.textContent = val + ' FPS';
+                if (window.setFpsLimit) window.setFpsLimit(val);
+            }
+        };
+    </script>
 
     <script>
         function copyCrashLog() {
@@ -1334,7 +1483,7 @@
             return false;
         };
     </script>
-    <script src="game.js?v=5.0-stable"></script>
+    <script src="game.js?v=5.0.2" defer></script>
     <!-- Reconnect Overlay -->
     <div id="reconnectOverlay">
         <div class="reconnect-spinner"></div>
@@ -1345,6 +1494,6 @@
             <button class="btn" onclick="location.href = '/'" style="background: #e74c3c; width: 150px;">MAIN MENU</button>
         </div>
     </div>
+    <div id="warpOverlay"></div>
 </body>
-
 </html>
