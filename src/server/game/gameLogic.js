@@ -47,9 +47,16 @@ function updatePlayer(p, room) {
       p.dashCooldown = 90; // 1.5s cooldown
     }
     
+    // Ability trigger (Q or Right Click)
+    if (p.keys.q && (!p.lastQState)) {
+      const { handleRightClick } = require('./gameLogic');
+      handleRightClick(p, room, p.mouseX, p.mouseY);
+    }
+    p.lastQState = !!p.keys.q;
+    
     let currentSpeed = p.speed;
     if (p.powerups.turbo > 0) currentSpeed *= 1.5;
-    if (room.gameState.hyperDriveBoost) currentSpeed *= room.gameState.hyperDriveBoost;
+    if (room.gameState.playerHyperDrive) currentSpeed *= room.gameState.playerHyperDrive;
     if (p.merchantSpeed) currentSpeed *= p.merchantSpeed;
     
     if (p.dashDuration > 0) {
@@ -103,7 +110,7 @@ function updatePlayer(p, room) {
     const spread = 0.15 + (p.spread || 0);
     const baseAngle = p.angle;
     const damage = (p.damage || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
-    const healing = p.healing || 0;
+    const healing = (p.healing || 0) + (p.lifesteal || 0);
     const piercing = p.piercing || 0;
     const bulletSize = (p.bulletSize || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
     
@@ -115,15 +122,19 @@ function updatePlayer(p, room) {
       const activeWeapons = [];
       if (p.hasDefault) activeWeapons.push('bullet');
       if (p.hasMissile) activeWeapons.push('homing_missile');
-      if (p.hasPulse) activeWeapons.push('pulse_wave');
+      
+      // Pulse logic: multiple projectiles if no tracking, huge beam if tracking
+      const hasPulseHugeBeam = p.hasPulse && p.homing > 0;
+      if (p.hasPulse && !hasPulseHugeBeam) activeWeapons.push('pulse_wave');
 
-      // 1. Fire Laser (Hitscan)
-      if (p.hasLaser) {
+      // 1. Fire Laser (Hitscan) or OMEGA KAMEHAMEHA
+      if (p.hasLaser || p.weaponType === 'kamehameha') {
+        const isKamehameha = p.weaponType === 'kamehameha';
         let laserAngle = angle;
         // Hitscan Laser Tracking
-        if (p.homing > 0) {
+        if (p.homing > 0 || isKamehameha) {
             let bestTarget = null;
-            let minDist = p.laserRange || 500;
+            let minDist = isKamehameha ? 1200 : (p.laserRange || 500);
             room.gameState.enemies.forEach(e => {
                 const d = dist(p, e);
                 if (d < minDist) { minDist = d; bestTarget = e; }
@@ -133,29 +144,38 @@ function updatePlayer(p, room) {
             }
         }
         
-        const range = p.laserRange || 500;
+        const range = isKamehameha ? 1200 : (p.laserRange || 500);
         const targetX = p.x + Math.cos(laserAngle) * range;
         const targetY = p.y + Math.sin(laserAngle) * range;
         
-        const laserDamage = damage * (p.laserDamageMult || 1.8);
+        const laserDamage = isKamehameha ? (damage * 10 * (p.kamehamehaPower || 1)) : (damage * (p.laserDamageMult || 1.8));
         const projectile = spawnProjectile(p.x, p.y, laserAngle, true, 100);
-        projectile.type = 'laser';
-        projectile.life = 15; 
-        projectile.maxLife = 15;
+        projectile.type = isKamehameha ? 'kamehameha' : 'laser';
+        projectile.life = isKamehameha ? 20 : 15; 
+        projectile.maxLife = projectile.life;
         projectile.damage = laserDamage;
         projectile.ownerId = p.id;
         projectile.ownerColor = p.color;
         projectile.range = range;
         
-        const laserWidth = 10 + (p.bulletSize || 1) * 5;
+        const laserWidth = isKamehameha ? (30 + (p.bulletSize || 1) * 10) : (10 + (p.bulletSize || 1) * 5);
         projectile.width = laserWidth;
+        projectile.isSparking = p.mouseDown && isKamehameha; // Hold for sparks
         room.gameState.projectiles.push(projectile);
 
         room.gameState.enemies.forEach(e => {
           if (isPointOnLine(e.x, e.y, p.x, p.y, targetX, targetY, e.radius + laserWidth)) {
-            e.hull -= laserDamage;
+            let finalDmg = laserDamage;
+            if (projectile.isSparking) finalDmg *= 0.3; // Sparks deal less but frequent damage
+            e.hull -= finalDmg;
             e.lastHitBy = p.id;
-            p.stats.damageDealt += laserDamage;
+            p.stats.damageDealt += finalDmg;
+            
+            // Push back small enemies with Kamehameha
+            if (isKamehameha && !e.isBoss) {
+                e.x += Math.cos(laserAngle) * 5;
+                e.y += Math.sin(laserAngle) * 5;
+            }
           }
         });
 
@@ -227,7 +247,7 @@ function updatePlayer(p, room) {
           projectile.isPulse = true;
           projectile.arc = p.pulseArc || (Math.PI / 4);
           projectile.radius = 20; 
-          projectile.maxRadius = 120 + (p.bulletSize || 1) * 40;
+          projectile.maxRadius = p.pulseMaxRadius || 120;
           projectile.life = 25; 
           projectile.damage *= 2.5;
           projectile.color = '#00f2ff';
@@ -239,6 +259,35 @@ function updatePlayer(p, room) {
         room.gameState.projectiles.push(projectile);
       });
     }
+
+    // 3. Fire Special "Huge Beam" Pulse if tracking is active
+    if (p.mouseDown && p.fireCooldown <= 0 && p.hasPulse && p.homing > 0) {
+        const damage = (p.damage || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
+        const bulletSize = (p.bulletSize || 1) * (p.powerups.megaShot > 0 ? 3 : 1);
+        
+        const projectile = spawnProjectile(
+          p.x + Math.cos(p.angle) * 20,
+          p.y + Math.sin(p.angle) * 20,
+          p.angle,
+          true,
+          8 // Slower but massive
+        );
+        projectile.type = 'pulse_beam';
+        projectile.isPulse = true;
+        projectile.isHugeBeam = true;
+        projectile.damage = damage * 5 * (1 + p.multiShot * 0.2); // Scales with multishot level
+        projectile.life = 40;
+        projectile.radius = 40;
+        projectile.maxRadius = p.pulseBeamMaxRadius || 300;
+        projectile.arc = Math.PI * 2; // Becomes a shockwave
+        projectile.homing = p.homing || 0.1;
+        projectile.color = '#00f2ff';
+        projectile.ownerId = p.id;
+        projectile.ownerColor = p.color;
+        
+        room.gameState.projectiles.push(projectile);
+    }
+
     p.fireCooldown = effectiveFireRate;
   }
   
@@ -276,7 +325,12 @@ function updatePlayer(p, room) {
       mine.color = '#f1c40f'; // Bright orange/yellow for mines
       mine.radius = 15 + minesLevel * 2;
       mine.bulletSize = 1 + minesLevel * 0.2;
-      mine.homing = 0; // Mines stay put
+      // Mine V3+ Auto-tracking synergy
+      mine.homing = minesLevel >= 3 ? (0.05 + (p.homing || 0) * 0.05) : 0; 
+      if (mine.homing > 0) {
+          mine.vx = Math.cos(spawnAngle) * 2; // Initial push
+          mine.vy = Math.sin(spawnAngle) * 2;
+      }
       
       gs.projectiles.push(mine);
       const cooldownTime = Math.max(60, 300 - minesLevel * 30); // 5s base, -0.5s per level, min 1s
@@ -620,6 +674,19 @@ function updateEnemies(room) {
   const gs = room.gameState;
   const m = gs.mothership;
   
+  // SERVER STABILIZATION: Entity pruning
+  const totalEntities = gs.enemies.length + gs.asteroids.length + gs.projectiles.length;
+  if (totalEntities > 1000) {
+    // Prune standard enemies if overloaded to maintain server tick rate
+    const pruneCount = Math.min(gs.enemies.length - 10, totalEntities - 1000);
+    if (pruneCount > 0) {
+        // Sort by distance to mothership and remove furthest
+        gs.enemies.sort((a, b) => dist(b, m) - dist(a, m));
+        gs.enemies.splice(0, pruneCount);
+        console.log(`[STABILITY] Pruned ${pruneCount} enemies due to overload.`);
+    }
+  }
+
   for (let i = gs.enemies.length - 1; i >= 0; i--) {
     const e = gs.enemies[i];
     
@@ -1663,6 +1730,7 @@ function handleRightClick(p, room, mouseX, mouseY) {
       rift.color = '#8e44ad'; // Purple for gravity/rift
       gs.projectiles.push(rift);
       p.riftCooldown = 600; // 10s cooldown
+      p.riftReady = false;
       
       if (room.broadcastToRoom) {
           room.broadcastToRoom({ 
