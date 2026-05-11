@@ -9,12 +9,22 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Non-render-blocking font and icon loading -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap"
+        media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'" />
     <style>
         /* Force font swap for performance */
-        @font-face { font-display: swap; }
-        * { font-display: swap !important; }
+        @font-face {
+            font-display: swap;
+        }
+
+        * {
+            font-display: swap !important;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -274,7 +284,10 @@
 
         #warpOverlay {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: white;
             opacity: 0;
             pointer-events: none;
@@ -653,92 +666,135 @@
         <canvas id="gameCanvas"></canvas>
 
         <div id="ui" style="z-index: 1000;">
-            <div id="bossHud" class="boss-hud hidden" style="position: absolute; top: 70px; left: 50%; transform: translateX(-50%); width: 450px; text-align: center; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 10px; border: 1px solid rgba(231, 76, 60, 0.2); backdrop-filter: blur(8px);">
-                <div id="bossName" class="boss-name" style="color: #e74c3c; font-weight: bold; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px;">FLAGSHIP ALPHA DETECTED</div>
-                <div class="boss-health-container" style="height: 20px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; position: relative; border: 1px solid #e74c3c;">
-                    <div id="bossHealth" class="boss-health-fill" style="height: 100%; width: 100%; background: #e74c3c; box-shadow: 0 0 15px #e74c3c;"></div>
-                    <span id="bossHealthText" style="position: absolute; width: 100%; text-align: center; font-size: 12px; font-weight: bold; color: white; top: 2px; pointer-events: none; text-shadow: 1px 1px 2px black;">5000 / 5000 HP</span>
+            <div id="bossHud" class="boss-hud hidden"
+                style="position: absolute; top: 70px; left: 50%; transform: translateX(-50%); width: 450px; text-align: center; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 10px; border: 1px solid rgba(231, 76, 60, 0.2); backdrop-filter: blur(8px);">
+                <div id="bossName" class="boss-name"
+                    style="color: #e74c3c; font-weight: bold; letter-spacing: 3px; font-size: 18px; margin-bottom: 8px;">
+                    FLAGSHIP ALPHA DETECTED</div>
+                <div class="boss-health-container"
+                    style="height: 20px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; position: relative; border: 1px solid #e74c3c;">
+                    <div id="bossHealth" class="boss-health-fill"
+                        style="height: 100%; width: 100%; background: #e74c3c; box-shadow: 0 0 15px #e74c3c;"></div>
+                    <span id="bossHealthText"
+                        style="position: absolute; width: 100%; text-align: center; font-size: 12px; font-weight: bold; color: white; top: 2px; pointer-events: none; text-shadow: 1px 1px 2px black;">5000
+                        / 5000 HP</span>
                 </div>
-                <div id="bossPhaseLabel" style="font-size: 10px; color: #bdc3c7; margin-top: 5px; text-transform: uppercase;">PHASE 1: INITIAL ENGAGEMENT</div>
+                <div id="bossPhaseLabel"
+                    style="font-size: 10px; color: #bdc3c7; margin-top: 5px; text-transform: uppercase;">PHASE 1:
+                    INITIAL ENGAGEMENT</div>
             </div>
-            <div id="achievementPopup" class="hidden glass-panel" style="position: absolute; bottom: 150px; right: 40px; z-index: 1000; display: flex; align-items: center; gap: 12px; border-color: #2ecc71; padding: 12px 18px; min-width: 240px; animation: slideInRight 0.5s ease-out;">
+            <div id="achievementPopup" class="hidden glass-panel"
+                style="position: absolute; bottom: 150px; right: 40px; z-index: 1000; display: flex; align-items: center; gap: 12px; border-color: #2ecc71; padding: 12px 18px; min-width: 240px; animation: slideInRight 0.5s ease-out;">
                 <div style="font-size: 20px;">🏆</div>
                 <div style="text-align: left;">
-                    <div style="font-weight: 900; color: #2ecc71; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;">Achievement!</div>
-                    <div id="achPopDesc" style="font-size: 13px; color: #ecf0f1; margin-top: 1px; font-weight: 500;">Achievement details here...</div>
+                    <div
+                        style="font-weight: 900; color: #2ecc71; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;">
+                        Achievement!</div>
+                    <div id="achPopDesc" style="font-size: 13px; color: #ecf0f1; margin-top: 1px; font-weight: 500;">
+                        Achievement details here...</div>
                 </div>
             </div>
             <div class="ui-top" style="top: 15px; left: 15px; right: 15px;">
                 <div style="opacity: 0.8;">
-                    <div class="health-bar" style="border-color: #2ecc71; position: relative; height: 16px; width: 180px; margin-bottom: 5px; background: rgba(0,0,0,0.2);">
+                    <div class="health-bar"
+                        style="border-color: #2ecc71; position: relative; height: 16px; width: 180px; margin-bottom: 5px; background: rgba(0,0,0,0.2);">
                         <div class="health-fill" id="playerHealth" style="width: 100%; background: #2ecc71;"></div>
-                        <span style="position: absolute; width: 100%; text-align: center; font-size: 11px; font-weight: bold; color: white; top: 1px; pointer-events: none; text-shadow: 1px 1px 2px black;">HULL HP</span>
+                        <span
+                            style="position: absolute; width: 100%; text-align: center; font-size: 11px; font-weight: bold; color: white; top: 1px; pointer-events: none; text-shadow: 1px 1px 2px black;">HULL
+                            HP</span>
                     </div>
-                    <div class="health-bar" style="border-color: #9b59b6; position: relative; height: 16px; width: 180px; background: rgba(0,0,0,0.2);">
+                    <div class="health-bar"
+                        style="border-color: #9b59b6; position: relative; height: 16px; width: 180px; background: rgba(0,0,0,0.2);">
                         <div class="shield-fill" id="playerShield" style="width: 0%; background: #9b59b6;"></div>
-                        <span style="position: absolute; width: 100%; text-align: center; font-size: 11px; color: white; top: 0; pointer-events: none; text-shadow: 1px 1px 2px black; font-weight: bold;">SHIELD CORE</span>
+                        <span
+                            style="position: absolute; width: 100%; text-align: center; font-size: 11px; color: white; top: 0; pointer-events: none; text-shadow: 1px 1px 2px black; font-weight: bold;">SHIELD
+                            CORE</span>
                     </div>
                 </div>
 
+            </div>
+
+            <div class="top-center hidden" style="top: 15px; opacity: 0.9;">
+                <div class="wave-info"
+                    style="background: rgba(0,0,0,0.15); padding: 8px 25px; border-radius: 12px; border: 1px solid rgba(46, 204, 113, 0.15); backdrop-filter: blur(8px);">
+                    <div id="waveDisplay"
+                        style="font-family: 'Orbitron', sans-serif; font-size: 22px; color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.5); letter-spacing: 3px; font-weight: 900;">
+                        WAVE 1</div>
+                    <div id="encounterTypeTop"
+                        style="font-size: 10px; color: #ecf0f1; letter-spacing: 1.5px; opacity: 0.7; margin-top: 2px; font-weight: bold; text-transform: uppercase;">
+                        DEFENSE WAVE</div>
                 </div>
 
-                <div class="top-center hidden" style="top: 15px; opacity: 0.9;">
-                    <div class="wave-info" style="background: rgba(0,0,0,0.15); padding: 8px 25px; border-radius: 12px; border: 1px solid rgba(46, 204, 113, 0.15); backdrop-filter: blur(8px);">
-                        <div id="waveDisplay" style="font-family: 'Orbitron', sans-serif; font-size: 22px; color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.5); letter-spacing: 3px; font-weight: 900;">WAVE 1</div>
-                        <div id="encounterTypeTop" style="font-size: 10px; color: #ecf0f1; letter-spacing: 1.5px; opacity: 0.7; margin-top: 2px; font-weight: bold; text-transform: uppercase;">DEFENSE WAVE</div>
-                    </div>
-
-                    <!-- PVP Scoreboard -->
-                    <div id="pvpScoreboard" class="hidden glass-panel"
-                        style="margin-top: 10px; padding: 12px; border-color: rgba(231, 76, 60, 0.4); min-width: 200px;">
-                        <div style="font-size: 11px; color: #e74c3c; margin-bottom: 8px; font-weight: bold; letter-spacing: 1px; text-align: center; border-bottom: 1px solid rgba(231, 76, 60, 0.2); padding-bottom: 4px;">PVP ARENA STANDINGS</div>
-                        <div id="pvpScoresList" style="font-size: 13px; font-family: 'JetBrains Mono', monospace;"></div>
-                    </div>
-
-                    <!-- Fleet Level & XP -->
-                    <div class="team-level-container" style="width: 220px; background: rgba(0,0,0,0.15); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(52, 152, 219, 0.1); backdrop-filter: blur(5px); margin-top: 4px;">
-                        <div class="level-label" style="font-size: 10px; color: #3498db; font-weight: bold; margin-bottom: 2px; display: flex; justify-content: space-between;">
-                            <span>FLEET LEVEL <span id="teamLevel">1</span></span>
-                        </div>
-                        <div class="xp-bar-bg" style="height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; position: relative; border: 1px solid rgba(52, 152, 219, 0.2);">
-                            <div id="teamXPBar" class="xp-bar-fill" style="height: 100%; width: 0%; background: linear-gradient(90deg, #3498db, #2ecc71); transition: width 0.3s ease;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right Side: Fleet Vitals -->
-                <div id="fleetVitals"
-                    style="position: absolute; top: 100px; right: 20px; z-index: 100; width: 220px; pointer-events: none; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; border: 1px solid rgba(52, 152, 219, 0.2); backdrop-filter: blur(10px); box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+                <!-- PVP Scoreboard -->
+                <div id="pvpScoreboard" class="hidden glass-panel"
+                    style="margin-top: 10px; padding: 12px; border-color: rgba(231, 76, 60, 0.4); min-width: 200px;">
                     <div
-                        style="font-size: 12px; color: #3498db; margin-bottom: 12px; font-weight: bold; border-bottom: 1px solid rgba(52, 152, 219, 0.3); padding-bottom: 5px; letter-spacing: 1.5px; text-align: center;">
-                        CORE FLEET SYSTEMS</div>
-                    
-                    <!-- Mothership Vitals -->
-                    <div class="mothership-stats-right" style="margin-bottom: 15px; padding: 10px; background: rgba(52, 152, 219, 0.05); border-radius: 5px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #3498db; margin-bottom: 6px; font-weight: bold;">
-                            <span>AEGIS COMMAND HUB</span>
-                            <span id="mothershipHullText" style="color: #2ecc71;">1000/1000</span>
-                        </div>
-                        <div class="stat-bar-bg" style="height: 16px; position: relative; border: 1px solid rgba(52, 152, 219, 0.4);">
-                            <div id="mothershipHealth" class="stat-bar-fill health-fill" style="background: #3498db;"></div>
-                            <span style="position: absolute; width: 100%; text-align: center; font-size: 10px; font-weight: bold; color: white; top: 1px; pointer-events: none; text-shadow: 1px 1px 2px black;">HULL HP INTEGRITY</span>
-                        </div>
-                        <div class="stat-bar-bg" style="height: 14px; position: relative; border: 1px solid rgba(155, 89, 182, 0.4); background: rgba(0,0,0,0.2); margin-top: 5px;">
-                            <div id="mothershipShield" class="stat-bar-fill shield-fill" style="background: #9b59b6;"></div>
-                            <span style="position: absolute; width: 100%; text-align: center; font-size: 10px; font-weight: bold; color: white; top: 0; pointer-events: none; text-shadow: 1px 1px 2px black;">SHIELD CORE</span>
+                        style="font-size: 11px; color: #e74c3c; margin-bottom: 8px; font-weight: bold; letter-spacing: 1px; text-align: center; border-bottom: 1px solid rgba(231, 76, 60, 0.2); padding-bottom: 4px;">
+                        PVP ARENA STANDINGS</div>
+                    <div id="pvpScoresList" style="font-size: 13px; font-family: 'JetBrains Mono', monospace;"></div>
+                </div>
+
+                <!-- Fleet Level & XP -->
+                <div class="team-level-container"
+                    style="width: 220px; background: rgba(0,0,0,0.15); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(52, 152, 219, 0.1); backdrop-filter: blur(5px); margin-top: 4px;">
+                    <div class="level-label"
+                        style="font-size: 10px; color: #3498db; font-weight: bold; margin-bottom: 2px; display: flex; justify-content: space-between;">
+                        <span>FLEET LEVEL <span id="teamLevel">1</span></span>
+                    </div>
+                    <div class="xp-bar-bg"
+                        style="height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; position: relative; border: 1px solid rgba(52, 152, 219, 0.2);">
+                        <div id="teamXPBar" class="xp-bar-fill"
+                            style="height: 100%; width: 0%; background: linear-gradient(90deg, #3498db, #2ecc71); transition: width 0.3s ease;">
                         </div>
                     </div>
+                </div>
+            </div>
 
-                    <div id="droneStatus" style="margin-bottom: 15px; display: none;">
-                        <div style="font-size: 10px; color: #2ecc71; font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid rgba(46, 204, 113, 0.2);">DRONE ARRAY STATUS</div>
-                        <div id="droneBars"></div>
+            <!-- Right Side: Fleet Vitals -->
+            <div id="fleetVitals"
+                style="position: absolute; top: 100px; right: 20px; z-index: 100; width: 220px; pointer-events: none; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; border: 1px solid rgba(52, 152, 219, 0.2); backdrop-filter: blur(10px); box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+                <div
+                    style="font-size: 12px; color: #3498db; margin-bottom: 12px; font-weight: bold; border-bottom: 1px solid rgba(52, 152, 219, 0.3); padding-bottom: 5px; letter-spacing: 1.5px; text-align: center;">
+                    CORE FLEET SYSTEMS</div>
+
+                <!-- Mothership Vitals -->
+                <div class="mothership-stats-right"
+                    style="margin-bottom: 15px; padding: 10px; background: rgba(52, 152, 219, 0.05); border-radius: 5px;">
+                    <div
+                        style="display: flex; justify-content: space-between; font-size: 12px; color: #3498db; margin-bottom: 6px; font-weight: bold;">
+                        <span>AEGIS COMMAND HUB</span>
+                        <span id="mothershipHullText" style="color: #2ecc71;">1000/1000</span>
                     </div>
+                    <div class="stat-bar-bg"
+                        style="height: 16px; position: relative; border: 1px solid rgba(52, 152, 219, 0.4);">
+                        <div id="mothershipHealth" class="stat-bar-fill health-fill" style="background: #3498db;"></div>
+                        <span
+                            style="position: absolute; width: 100%; text-align: center; font-size: 10px; font-weight: bold; color: white; top: 1px; pointer-events: none; text-shadow: 1px 1px 2px black;">HULL
+                            HP INTEGRITY</span>
+                    </div>
+                    <div class="stat-bar-bg"
+                        style="height: 14px; position: relative; border: 1px solid rgba(155, 89, 182, 0.4); background: rgba(0,0,0,0.2); margin-top: 5px;">
+                        <div id="mothershipShield" class="stat-bar-fill shield-fill" style="background: #9b59b6;"></div>
+                        <span
+                            style="position: absolute; width: 100%; text-align: center; font-size: 10px; font-weight: bold; color: white; top: 0; pointer-events: none; text-shadow: 1px 1px 2px black;">SHIELD
+                            CORE</span>
+                    </div>
+                </div>
 
-                    <div id="vitalsList"></div>
-                    
-                    <div id="abilitiesList" style="margin-top: 15px; border-top: 1px solid rgba(52, 152, 219, 0.2); padding-top: 10px;"></div>
-                    
-                    <div id="powerupNotifications" style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;"></div>
+                <div id="droneStatus" style="margin-bottom: 15px; display: none;">
+                    <div
+                        style="font-size: 10px; color: #2ecc71; font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid rgba(46, 204, 113, 0.2);">
+                        DRONE ARRAY STATUS</div>
+                    <div id="droneBars"></div>
+                </div>
+
+                <div id="vitalsList"></div>
+
+                <div id="abilitiesList"
+                    style="margin-top: 15px; border-top: 1px solid rgba(52, 152, 219, 0.2); padding-top: 10px;"></div>
+
+                <div id="powerupNotifications"
+                    style="margin-top: 15px; display: flex; flex-direction: column; gap: 8px;"></div>
                 <div id="roomCodeDisplay" class="room-code-display hidden"
                     style="position: absolute; top: 20px; right: 20px; z-index: 500; background: rgba(0,0,0,0.6); padding: 5px 15px; border: 1px solid #3498db; border-radius: 5px; font-weight: bold; color: #3498db; font-family: Orbitron;">
                     ROOM: ----</div>
@@ -747,11 +803,14 @@
         </div>
 
         <div class="ui-bottom">
-                <!-- Bottom Left: ESC Hint and Fleet Status -->
-                <div style="position: absolute; bottom: 15px; left: 15px; z-index: 400; display: flex; flex-direction: column; gap: 8px; opacity: 0.7;">
-                    <div id="escMenuHint" style="color: #e74c3c; font-size: 9px; font-weight: bold; letter-spacing: 1px; animation: pulse-red 2s infinite;">[ESC] MENU</div>
-                    <div style="display: flex; gap: 10px;">
-                        <button id="toggleStatusBtn" class="btn" style="
+            <!-- Bottom Left: ESC Hint and Fleet Status -->
+            <div
+                style="position: absolute; bottom: 15px; left: 15px; z-index: 400; display: flex; flex-direction: column; gap: 8px; opacity: 0.7;">
+                <div id="escMenuHint"
+                    style="color: #e74c3c; font-size: 9px; font-weight: bold; letter-spacing: 1px; animation: pulse-red 2s infinite;">
+                    [ESC] MENU</div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="toggleStatusBtn" class="btn" style="
                                 padding: 8px 15px; font-size: 11px; 
                                 background: rgba(52, 152, 219, 0.1);
                                 border: 1px solid rgba(52, 152, 219, 0.4);
@@ -759,7 +818,7 @@
                                 backdrop-filter: blur(5px);
                                 font-weight: bold;
                             ">FLEET STATUS</button>
-                        <button onclick="toggleSettingsModal()" class="btn" style="
+                    <button onclick="toggleSettingsModal()" class="btn" style="
                                 padding: 8px 15px; font-size: 11px; 
                                 background: rgba(149, 165, 166, 0.1);
                                 border: 1px solid rgba(149, 165, 166, 0.4);
@@ -767,38 +826,53 @@
                                 backdrop-filter: blur(5px);
                                 font-weight: bold;
                             ">SETTINGS</button>
-                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Center: Current Mission -->
+            <div class="mission-status-container hidden"
+                style="position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px; background: rgba(0,0,0,0.15); padding: 10px 20px; border-radius: 12px; border: 1px solid rgba(241, 196, 15, 0.15); backdrop-filter: blur(8px);">
+                <div style="display: flex; align-items: center; gap: 12px; width: 100%; justify-content: center;">
+                    <div
+                        style="color: #f1c40f; font-weight: bold; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.7;">
+                        Current Mission</div>
+                    <div id="encounterTypeBottom"
+                        style="font-size: 16px; font-weight: 900; color: white; text-transform: uppercase; border-left: 2px solid #f1c40f; padding-left: 10px; font-family: 'Orbitron', sans-serif; letter-spacing: 1px;">
+                        DEFENSE WAVE</div>
                 </div>
 
-                <!-- Bottom Center: Current Mission -->
-                <div class="mission-status-container hidden" style="position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px; background: rgba(0,0,0,0.15); padding: 10px 20px; border-radius: 12px; border: 1px solid rgba(241, 196, 15, 0.15); backdrop-filter: blur(8px);">
-                    <div style="display: flex; align-items: center; gap: 12px; width: 100%; justify-content: center;">
-                        <div style="color: #f1c40f; font-weight: bold; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.7;">Current Mission</div>
-                        <div id="encounterTypeBottom" style="font-size: 16px; font-weight: 900; color: white; text-transform: uppercase; border-left: 2px solid #f1c40f; padding-left: 10px; font-family: 'Orbitron', sans-serif; letter-spacing: 1px;">DEFENSE WAVE</div>
+                <div class="progress-container"
+                    style="width: 280px; height: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(46, 204, 113, 0.2); border-radius: 6px; overflow: hidden; position: relative;">
+                    <div id="waveProgress" class="progress-fill"
+                        style="height: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); box-shadow: 0 0 10px rgba(46, 204, 113, 0.3);">
                     </div>
-                    
-                    <div class="progress-container" style="width: 280px; height: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(46, 204, 113, 0.2); border-radius: 6px; overflow: hidden; position: relative;">
-                        <div id="waveProgress" class="progress-fill" style="height: 100%; background: linear-gradient(90deg, #2ecc71, #27ae60); box-shadow: 0 0 10px rgba(46, 204, 113, 0.3);"></div>
-                        <div id="missionTimer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none; color: #ecf0f1; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
-                            <span id="missionTimerText">00:00</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Bottom Right: System Monitor -->
-                <div id="debugMonitor"
-                    style="position: absolute; bottom: 15px; right: 15px; z-index: 400; background: rgba(10, 10, 10, 0.2); border: 1px solid rgba(52, 152, 219, 0.15); border-radius: 6px; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3498db; pointer-events: none; width: 180px; height: 100px; backdrop-filter: blur(4px);">
-                    <div style="border-bottom: 1px solid rgba(52, 152, 219, 0.2); margin-bottom: 6px; font-weight: bold; letter-spacing: 1px; color: #ecf0f1; font-size: 13px;">SYSTEM MONITOR</div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
-                        <div style="color: #7f8c8d; font-size: 11px;">PHASE:</div><div id="debugPhase" style="color: #3498db; font-size: 11px;">COMBAT</div>
-                        <div style="color: #7f8c8d; font-size: 11px;">ENTITIES:</div><div id="debugEntities" style="color: #2ecc71; font-size: 11px;">0</div>
-                        <div style="color: #7f8c8d; font-size: 11px;">LATENCY:</div><div id="debugPing" style="color: #f1c40f; font-size: 11px;">0ms</div>
-                        <div style="color: #7f8c8d; font-size: 11px;">PERF:</div><div id="debugFPS" style="color: #e74c3c; font-size: 11px;">0 FPS</div>
+                    <div id="missionTimer"
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none; color: #ecf0f1; font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
+                        <span id="missionTimerText">00:00</span>
                     </div>
                 </div>
             </div>
 
+            <!-- Bottom Right: System Monitor -->
+            <div id="debugMonitor"
+                style="position: absolute; bottom: 15px; right: 15px; z-index: 400; background: rgba(10, 10, 10, 0.2); border: 1px solid rgba(52, 152, 219, 0.15); border-radius: 6px; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3498db; pointer-events: none; width: 180px; height: 100px; backdrop-filter: blur(4px);">
+                <div
+                    style="border-bottom: 1px solid rgba(52, 152, 219, 0.2); margin-bottom: 6px; font-weight: bold; letter-spacing: 1px; color: #ecf0f1; font-size: 13px;">
+                    SYSTEM MONITOR</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <div style="color: #7f8c8d; font-size: 11px;">PHASE:</div>
+                    <div id="debugPhase" style="color: #3498db; font-size: 11px;">COMBAT</div>
+                    <div style="color: #7f8c8d; font-size: 11px;">ENTITIES:</div>
+                    <div id="debugEntities" style="color: #2ecc71; font-size: 11px;">0</div>
+                    <div style="color: #7f8c8d; font-size: 11px;">LATENCY:</div>
+                    <div id="debugPing" style="color: #f1c40f; font-size: 11px;">0ms</div>
+                    <div style="color: #7f8c8d; font-size: 11px;">PERF:</div>
+                    <div id="debugFPS" style="color: #e74c3c; font-size: 11px;">0 FPS</div>
+                </div>
+            </div>
         </div>
+
+    </div>
     </div>
     <div id="devStatus"
         style="position: absolute; top: 10px; right: 10px; background: rgba(231, 76, 60, 0.2); border: 1px solid #e74c3c; border-radius: 5px; padding: 5px 10px; font-family: monospace; font-size: 10px; color: #e74c3c; z-index: 10000; display: none; pointer-events: none; backdrop-filter: blur(5px);">
@@ -808,7 +882,8 @@
     <div id="lobby">
         <div class="lobby-content">
             <h1>Aegis Command</h1>
-            <div id="gameVersion" style="font-size: 11px; color: #3498db; margin-top: -10px; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px;">
+            <div id="gameVersion"
+                style="font-size: 11px; color: #3498db; margin-top: -10px; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px;">
                 v6.0.0</div>
 
             <!-- Live Server Stats -->
@@ -836,7 +911,8 @@
 
                 <div class="form-group">
                     <label for="roomCode">Room Code</label>
-                    <input type="text" id="roomCode" placeholder="Enter 4-letter code" maxlength="4" style="text-transform: uppercase;">
+                    <input type="text" id="roomCode" placeholder="Enter 4-letter code" maxlength="4"
+                        style="text-transform: uppercase;">
                 </div>
 
                 <div class="form-group">
@@ -846,22 +922,28 @@
 
                 <div class="form-group">
                     <label for="roomMaxPlayers">Max Players (1-8)</label>
-                    <input type="number" id="roomMaxPlayers" value="8" min="1" max="8" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
+                    <input type="number" id="roomMaxPlayers" value="8" min="1" max="8"
+                        style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 12px; width: 100%;">
                 </div>
 
                 <div class="form-group">
                     <label for="fpsLimit">Performance Limit (<span id="fpsValue">60</span> FPS)</label>
-                    <input type="range" id="fpsLimit" min="30" max="240" value="60" step="10" oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value);" style="width: 100%;">
+                    <input type="range" id="fpsLimit" min="30" max="240" value="60" step="10"
+                        oninput="document.getElementById('fpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value);"
+                        style="width: 100%;">
                 </div>
 
                 <details style="margin-bottom: 20px; color: #bdc3c7; font-size: 14px;">
-                    <summary style="cursor: pointer; padding: 10px 0; color: #3498db; font-weight: bold; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <summary
+                        style="cursor: pointer; padding: 10px 0; color: #3498db; font-weight: bold; border-top: 1px solid rgba(255,255,255,0.1);">
                         <i class="fas fa-sliders-h"></i> ADVANCED HOST SETTINGS
                     </summary>
-                    <div style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;">
+                    <div
+                        style="margin-top: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid #34495e;">
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label for="difficulty" style="font-size: 12px;">Difficulty Level</label>
-                            <select id="difficulty" style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 10px; width: 100%; margin-top: 5px;">
+                            <select id="difficulty"
+                                style="background: rgba(255, 255, 255, 0.1); border: 1px solid #34495e; border-radius: 8px; color: #ffffff; padding: 10px; width: 100%; margin-top: 5px;">
                                 <option value="easy">Recruit (60% HP, 80% Speed)</option>
                                 <option value="normal" selected>Captain (Standard)</option>
                                 <option value="hard">Admiral (150% HP, 120% Speed)</option>
@@ -870,15 +952,18 @@
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label for="waveDuration" style="font-size: 12px;">Wave Duration (Seconds)</label>
-                            <input type="number" id="waveDuration" value="60" min="10" max="300" style="padding: 8px; margin-top: 5px; width: 100%;">
+                            <input type="number" id="waveDuration" value="60" min="10" max="300"
+                                style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                         <div class="form-group" style="margin-bottom: 15px;">
                             <label for="damageMultiplier" style="font-size: 12px;">Enemy Multiplier (Damage/HP)</label>
-                            <input type="number" id="damageMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="padding: 8px; margin-top: 5px; width: 100%;">
+                            <input type="number" id="damageMultiplier" value="1.0" step="0.1" min="0.1" max="5.0"
+                                style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label for="goldMultiplier" style="font-size: 12px;">Gold Multiplier</label>
-                            <input type="number" id="goldMultiplier" value="1.0" step="0.1" min="0.1" max="5.0" style="padding: 8px; margin-top: 5px; width: 100%;">
+                            <input type="number" id="goldMultiplier" value="1.0" step="0.1" min="0.1" max="5.0"
+                                style="padding: 8px; margin-top: 5px; width: 100%;">
                         </div>
                     </div>
                 </details>
@@ -889,10 +974,12 @@
                 </div>
 
                 <div class="button-group" style="margin-bottom: 15px;">
-                    <button class="btn" onclick="playSinglePlayer()" style="width: 100%; background: #2ecc71;">START SINGLE PLAYER</button>
+                    <button class="btn" onclick="playSinglePlayer()" style="width: 100%; background: #2ecc71;">START
+                        SINGLE PLAYER</button>
                 </div>
 
-                <div class="button-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                <div class="button-group"
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
                     <button class="btn btn-secondary" onclick="toggleSettingsModal()" title="System Settings">
                         <i class="fas fa-sliders-h"></i> SETTINGS
                     </button>
@@ -907,8 +994,12 @@
                     </button>
                 </div>
 
-                <div id="lobbyError" style="color: #e74c3c; font-size: 13px; margin-top: 15px; text-align: center; min-height: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);"></div>
-                <div id="wipNotice" style="color: #f39c12; font-size: 10px; margin-top: 10px; text-align: center; opacity: 0.8;">Note: High entity counts (>200) may impact performance on some devices.</div>
+                <div id="lobbyError"
+                    style="color: #e74c3c; font-size: 13px; margin-top: 15px; text-align: center; min-height: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);">
+                </div>
+                <div id="wipNotice"
+                    style="color: #f39c12; font-size: 10px; margin-top: 10px; text-align: center; opacity: 0.8;">Note:
+                    High entity counts (>200) may impact performance on some devices.</div>
             </div>
 
             <div id="roomInfo" class="hidden">
@@ -1074,20 +1165,24 @@
             box-sizing: border-box;
             text-align: left;
         }
+
         .upgrade-option-new:hover:not(.disabled) {
             background: rgba(255, 255, 255, 0.08);
             transform: scale(1.02);
             border-color: rgba(255, 255, 255, 0.3);
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
+
         .upgrade-option-new.disabled {
             cursor: not-allowed;
             opacity: 0.6;
         }
+
         .upgrade-option-new.pinned-border {
             border: 2px solid #f1c40f !important;
             box-shadow: inset 0 0 15px rgba(241, 196, 15, 0.1);
         }
+
         .upgrade-icon-container {
             width: 60px;
             height: 60px;
@@ -1099,32 +1194,38 @@
             font-size: 24px;
             margin-right: 15px;
         }
+
         .upgrade-content {
             flex: 1;
         }
+
         .upgrade-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 5px;
         }
+
         .upgrade-category {
             font-size: 11px;
             font-weight: 800;
             letter-spacing: 1.5px;
             text-transform: uppercase;
         }
+
         .upgrade-level {
             font-size: 11px;
             color: #bdc3c7;
             font-weight: bold;
         }
+
         .upgrade-title {
             margin: 0 0 5px 0;
             font-size: 20px;
             color: #ecf0f1;
             font-weight: 700;
         }
+
         .upgrade-desc {
             margin: 0 0 12px 0;
             font-size: 14px;
@@ -1132,15 +1233,18 @@
             line-height: 1.5;
             opacity: 0.9;
         }
+
         .upgrade-option-new.disabled .upgrade-desc {
             color: #95a5a6;
             opacity: 0.7;
         }
+
         .upgrade-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+
         .upgrade-cost {
             font-weight: bold;
             font-size: 14px;
@@ -1148,8 +1252,15 @@
             align-items: center;
             gap: 5px;
         }
-        .upgrade-cost.affordable { color: #f1c40f; }
-        .upgrade-cost.expensive { color: #e74c3c; }
+
+        .upgrade-cost.affordable {
+            color: #f1c40f;
+        }
+
+        .upgrade-cost.expensive {
+            color: #e74c3c;
+        }
+
         .btn-pin {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1159,11 +1270,23 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-        .btn-pin:hover { color: #f1c40f; border-color: #f1c40f; }
-        .btn-pin.pinned { color: #f1c40f; border-color: #f1c40f; }
+
+        .btn-pin:hover {
+            color: #f1c40f;
+            border-color: #f1c40f;
+        }
+
+        .btn-pin.pinned {
+            color: #f1c40f;
+            border-color: #f1c40f;
+        }
+
         .locked-overlay {
             position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: rgba(0, 0, 0, 0.4);
             display: flex;
             align-items: center;
@@ -1174,17 +1297,39 @@
         }
 
         @keyframes slideInUp {
-            from { transform: translate(-50%, 100%); opacity: 0; }
-            to { transform: translate(-50%, 0); opacity: 1; }
+            from {
+                transform: translate(-50%, 100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translate(-50%, 0);
+                opacity: 1;
+            }
         }
+
         @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
+
         @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; }
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
         }
+
         @keyframes pulse-blue {
             0% {
                 box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7);
@@ -1214,20 +1359,25 @@
         </div>
         <div style="display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; gap: 20px; justify-content: center; margin: 10px 0;">
-                <label style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="toggleMusic" checked onchange="if(window.audio) window.audio.toggleMusic(this.checked)"> Music
+                <label
+                    style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="toggleMusic" checked
+                        onchange="if(window.audio) window.audio.toggleMusic(this.checked)"> Music
                 </label>
-                <label style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                    <input type="checkbox" id="toggleSFX" checked onchange="if(window.audio) window.audio.toggleSFX(this.checked)"> Sound FX
+                <label
+                    style="color: #bdc3c7; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="toggleSFX" checked
+                        onchange="if(window.audio) window.audio.toggleSFX(this.checked)"> Sound FX
                 </label>
             </div>
             <button class="btn" onclick="togglePauseMenu()">Resume</button>
-            <button class="btn btn-secondary" onclick="toggleSettingsModal()" style="border-color: #3498db; color: #3498db; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <button class="btn btn-secondary" onclick="toggleSettingsModal()"
+                style="border-color: #3498db; color: #3498db; display: flex; align-items: center; justify-content: center; gap: 8px;">
                 <i class="fas fa-cog"></i> GRAPHICS SETTINGS
             </button>
             <div class="form-group" style="text-align: left;">
-                <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span
-                        id="pauseFpsValue">60</span> FPS)</label>
+                <label for="pauseFpsLimit" style="color: #bdc3c7;">Performance Limit (<span id="pauseFpsValue">60</span>
+                    FPS)</label>
                 <input type="range" id="pauseFpsLimit" min="30" max="240" value="60" step="10"
                     oninput="document.getElementById('pauseFpsValue').textContent=this.value; if(window.setFpsLimit) window.setFpsLimit(this.value); const lf = document.getElementById('fpsLimit'); if(lf){lf.value=this.value; document.getElementById('fpsValue').textContent=this.value;}"
                     style="width: 100%;">
@@ -1361,51 +1511,73 @@
                 Select an upgrade to see details...</div>
         </div>
         <button class="btn" onclick="ws.send(JSON.stringify({ type: 'get_compendium' }))"
-            style="width: 100%; padding: 5px; font-size: 10px; margin-top: 10px; background: #34495e;">REFRESH UPGRADE LIST</button>
+            style="width: 100%; padding: 5px; font-size: 10px; margin-top: 10px; background: #34495e;">REFRESH UPGRADE
+            LIST</button>
         <div style="font-size: 9px; color: #7f8c8d; text-align: center; margin-top: 10px;">Note: Upgrades are applied
             instantly and can be stacked multiple times.</div>
     </div>
 
-    <div id="crashModal" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 1000000; display: flex; align-items: center; justify-content: center; pointer-events: auto;">
-        <div style="background: #1a1a1a; border: 2px solid #e74c3c; border-radius: 15px; padding: 40px; width: 600px; max-width: 90vw; text-align: center; box-shadow: 0 0 50px rgba(231, 76, 60, 0.4);">
+    <div id="crashModal" class="hidden"
+        style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 1000000; display: flex; align-items: center; justify-content: center; pointer-events: auto;">
+        <div
+            style="background: #1a1a1a; border: 2px solid #e74c3c; border-radius: 15px; padding: 40px; width: 600px; max-width: 90vw; text-align: center; box-shadow: 0 0 50px rgba(231, 76, 60, 0.4);">
             <div style="font-size: 50px; margin-bottom: 20px;">🚨</div>
             <h2 style="color: #e74c3c; margin-bottom: 10px; font-family: Orbitron;">CORE SYSTEM FAILURE</h2>
-            <p style="color: #bdc3c7; margin-bottom: 20px;">An unexpected error has occurred and the game has crashed. Please copy the log below and report it to the developers.</p>
-            <div id="crashLogDisplay" style="background: #000; color: #2ecc71; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; text-align: left; max-height: 200px; overflow-y: auto; margin-bottom: 25px; border: 1px solid #333;"></div>
+            <p style="color: #bdc3c7; margin-bottom: 20px;">An unexpected error has occurred and the game has crashed.
+                Please copy the log below and report it to the developers.</p>
+            <div id="crashLogDisplay"
+                style="background: #000; color: #2ecc71; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; text-align: left; max-height: 200px; overflow-y: auto; margin-bottom: 25px; border: 1px solid #333;">
             </div>
         </div>
     </div>
+    </div>
 
     <!-- Settings Modal -->
-    <div id="settingsModal" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 20000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
-        <div class="glass-panel" style="width: 420px; padding: 30px; border-radius: 15px; border: 2px solid #3498db; pointer-events: auto;">
-            <h2 style="color: #3498db; text-align: center; margin-bottom: 25px; font-family: 'Orbitron', sans-serif;">GRAPHICS SETTINGS</h2>
-            
+    <div id="settingsModal" class="hidden"
+        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 20000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+        <div class="glass-panel"
+            style="width: 420px; padding: 30px; border-radius: 15px; border: 2px solid #3498db; pointer-events: auto;">
+            <h2 style="color: #3498db; text-align: center; margin-bottom: 25px; font-family: 'Orbitron', sans-serif;">
+                GRAPHICS SETTINGS</h2>
+
             <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">VFX QUALITY (ENTITY CAP)</label>
+                <label
+                    style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">VFX
+                    QUALITY (ENTITY CAP)</label>
                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
-                    <button class="btn btn-secondary vfx-btn" id="vfx-low" onclick="setVfxLevel(200, this)" style="padding: 10px 5px; font-size: 10px;">LOW (200)</button>
-                    <button class="btn btn-secondary vfx-btn" id="vfx-mid" onclick="setVfxLevel(500, this)" style="padding: 10px 5px; font-size: 10px;">MID (500)</button>
-                    <button class="btn btn-secondary vfx-btn" id="vfx-high" onclick="setVfxLevel(800, this)" style="padding: 10px 5px; font-size: 10px;">HIGH (800)</button>
-                    <button class="btn btn-secondary vfx-btn" id="vfx-max" onclick="setVfxLevel(5000, this)" style="padding: 10px 5px; font-size: 10px;">MAX (∞)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-low" onclick="setVfxLevel(200, this)"
+                        style="padding: 10px 5px; font-size: 10px;">LOW (200)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-mid" onclick="setVfxLevel(500, this)"
+                        style="padding: 10px 5px; font-size: 10px;">MID (500)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-high" onclick="setVfxLevel(800, this)"
+                        style="padding: 10px 5px; font-size: 10px;">HIGH (800)</button>
+                    <button class="btn btn-secondary vfx-btn" id="vfx-max" onclick="setVfxLevel(5000, this)"
+                        style="padding: 10px 5px; font-size: 10px;">MAX (∞)</button>
                 </div>
-                <p style="font-size: 10px; color: #7f8c8d; margin-top: 5px;">Limits particles & text popups. High settings may impact FPS in late waves.</p>
+                <p style="font-size: 10px; color: #7f8c8d; margin-top: 5px;">Limits particles & text popups. High
+                    settings may impact FPS in late waves.</p>
             </div>
 
             <div class="form-group" style="margin-top: 20px;">
-                <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; pointer-events: auto;">
+                <label
+                    style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; pointer-events: auto;">
                     <span>SELF EFFECTS ONLY</span>
-                    <input type="checkbox" id="selfVfxOnlyToggle" onchange="if(window.graphicsSettings) window.graphicsSettings.selfVfxOnly = this.checked;" style="width: 20px; height: 20px;">
+                    <input type="checkbox" id="selfVfxOnlyToggle"
+                        onchange="if(window.graphicsSettings) window.graphicsSettings.selfVfxOnly = this.checked;"
+                        style="width: 20px; height: 20px;">
                 </label>
-                <p style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">Only show your own projectiles and effects for maximum clarity.</p>
+                <p style="font-size: 11px; color: #7f8c8d; margin-top: 5px;">Only show your own projectiles and effects
+                    for maximum clarity.</p>
             </div>
 
             <div class="form-group" style="margin-top: 25px;">
-                <label style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">FPS LIMIT: <span id="fpsLimitValue">60 FPS</span></label>
-                <input type="range" id="fpsLimitSlider" min="30" max="245" value="60" step="5" 
-                    oninput="updateFpsDisplay(this.value)" 
-                    style="width: 100%; cursor: pointer;">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #7f8c8d; margin-top: 5px;">
+                <label
+                    style="display: block; color: #bdc3c7; font-size: 12px; margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;">FPS
+                    LIMIT: <span id="fpsLimitValue">60 FPS</span></label>
+                <input type="range" id="fpsLimitSlider" min="30" max="245" value="60" step="5"
+                    oninput="updateFpsDisplay(this.value)" style="width: 100%; cursor: pointer;">
+                <div
+                    style="display: flex; justify-content: space-between; font-size: 10px; color: #7f8c8d; margin-top: 5px;">
                     <span>30</span>
                     <span>60</span>
                     <span>120</span>
@@ -1414,25 +1586,36 @@
                 </div>
             </div>
 
-            <button class="btn" onclick="toggleSettingsModal()" style="width: 100%; margin-top: 30px; pointer-events: auto; background: linear-gradient(135deg, #3498db, #2980b9);">APPLY & CLOSE</button>
+            <button class="btn" onclick="toggleSettingsModal()"
+                style="width: 100%; margin-top: 30px; pointer-events: auto; background: linear-gradient(135deg, #3498db, #2980b9);">APPLY
+                & CLOSE</button>
         </div>
     </div>
 
     <!-- Crash Recovery Overlay -->
-    <div id="crashModal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px);">
-        <div class="glass-panel" style="width: 90%; max-width: 700px; padding: 40px; border: 1px solid #e74c3c; box-shadow: 0 0 50px rgba(231, 76, 60, 0.3);">
-            <div style="color: #e74c3c; font-size: 24px; font-weight: 900; letter-spacing: 2px; margin-bottom: 20px; text-align: center;">CORE SYSTEM FAILURE</div>
-            <p style="color: #bdc3c7; font-size: 14px; margin-bottom: 25px; line-height: 1.6; text-align: center;">An unexpected error has occurred and the game has crashed. Please copy the log below and report it to the developers.</p>
-            <div id="crashLogDisplay" style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px; border: 1px solid #444; color: #2ecc71; font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 30px;"></div>
+    <div id="crashModal" class="hidden"
+        style="position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 10000; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(15px);">
+        <div class="glass-panel"
+            style="width: 90%; max-width: 700px; padding: 40px; border: 1px solid #e74c3c; box-shadow: 0 0 50px rgba(231, 76, 60, 0.3);">
+            <div
+                style="color: #e74c3c; font-size: 24px; font-weight: 900; letter-spacing: 2px; margin-bottom: 20px; text-align: center;">
+                CORE SYSTEM FAILURE</div>
+            <p style="color: #bdc3c7; font-size: 14px; margin-bottom: 25px; line-height: 1.6; text-align: center;">An
+                unexpected error has occurred and the game has crashed. Please copy the log below and report it to the
+                developers.</p>
+            <div id="crashLogDisplay"
+                style="background: rgba(0,0,0,0.5); padding: 20px; border-radius: 8px; border: 1px solid #444; color: #2ecc71; font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 30px;">
+            </div>
             <div style="display: flex; gap: 15px;">
                 <button class="btn" onclick="copyCrashLog()" style="flex: 1; background: #2ecc71;">COPY LOG</button>
-                <button class="btn" onclick="location.reload()" style="flex: 1; background: #3498db;">RESTART CORE</button>
+                <button class="btn" onclick="location.reload()" style="flex: 1; background: #3498db;">RESTART
+                    CORE</button>
             </div>
         </div>
     </div>
 
     <script>
-        window.setVfxLevel = function(cap, btn) {
+        window.setVfxLevel = function (cap, btn) {
             if (window.graphicsSettings) {
                 window.graphicsSettings.vfxLimit = cap;
                 window.isGraphicsOptimized = true;
@@ -1444,7 +1627,7 @@
                 b.style.color = '#bdc3c7';
                 b.style.boxShadow = 'none';
             });
-            
+
             if (btn) {
                 btn.style.background = 'rgba(52, 152, 219, 0.2)';
                 btn.style.borderColor = '#3498db';
@@ -1453,7 +1636,7 @@
             }
         };
 
-        window.updateFpsDisplay = function(val) {
+        window.updateFpsDisplay = function (val) {
             const display = document.getElementById('fpsLimitValue');
             if (!display) return;
             if (val > 240) {
@@ -1473,7 +1656,7 @@
                 alert('Crash log copied to clipboard!');
             });
         }
-        window.onerror = function(msg, url, line, col, error) {
+        window.onerror = function (msg, url, line, col, error) {
             const crashModal = document.getElementById('crashModal');
             const logDisplay = document.getElementById('crashLogDisplay');
             if (crashModal && logDisplay) {
@@ -1491,9 +1674,11 @@
         <p style="color: #bdc3c7; margin-bottom: 20px;">Attempting to reconnect to your session...</p>
         <div style="display: flex; gap: 15px;">
             <button class="btn" onclick="location.reload()" style="background: #3498db; width: 150px;">RETRY</button>
-            <button class="btn" onclick="location.href = '/'" style="background: #e74c3c; width: 150px;">MAIN MENU</button>
+            <button class="btn" onclick="location.href = '/'" style="background: #e74c3c; width: 150px;">MAIN
+                MENU</button>
         </div>
     </div>
     <div id="warpOverlay"></div>
 </body>
+
 </html>
